@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,16 +17,50 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
-import type { SocioPFC } from "@/lib/readSociosExcel";
+import type { PfcSociosApiResponse, SocioPFC } from "@/types/pfc-socios";
 
-type SociosPageClientProps = {
-  socios: SocioPFC[];
-  loadError?: string;
-};
-
-export function SociosPageClient({ socios, loadError }: SociosPageClientProps) {
+export function SociosPageClient() {
   const { role } = useUser();
   const [query, setQuery] = useState("");
+  const [socios, setSocios] = useState<SocioPFC[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    async function loadSocios() {
+      try {
+        setIsLoading(true);
+        setLoadError(null);
+
+        const response = await fetch("/api/test-table", {
+          method: "GET",
+          signal: abortController.signal,
+          cache: "no-store",
+        });
+
+        const data = (await response.json()) as PfcSociosApiResponse;
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error ?? "Error consultando socios");
+        }
+
+        setSocios(Array.isArray(data.rows) ? data.rows : []);
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return;
+        setLoadError("No se pudieron cargar los socios del sistema Procoop");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadSocios();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   const sociosFiltrados = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -37,10 +71,11 @@ export function SociosPageClient({ socios, loadError }: SociosPageClientProps) {
 
     return socios.filter((socio) => {
       return (
-        socio.numero_socio.toLowerCase().includes(normalizedQuery) ||
+        String(socio.codSoc).includes(normalizedQuery) ||
         socio.titular.toLowerCase().includes(normalizedQuery) ||
-        socio.cuenta.includes(normalizedQuery) ||
-        socio.dni.includes(normalizedQuery)
+        String(socio.numeroCuenta).includes(normalizedQuery) ||
+        socio.dni.toLowerCase().includes(normalizedQuery) ||
+        socio.movil.toLowerCase().includes(normalizedQuery)
       );
     });
   }, [query, socios]);
@@ -53,6 +88,19 @@ export function SociosPageClient({ socios, loadError }: SociosPageClientProps) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-slate-600">No tienes permisos para acceder a este modulo.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Gestion de Socios PFC</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600">Cargando socios PFC...</p>
         </CardContent>
       </Card>
     );
@@ -76,7 +124,7 @@ export function SociosPageClient({ socios, loadError }: SociosPageClientProps) {
       <CardHeader className="space-y-4">
         <CardTitle>Gestion de Socios PFC</CardTitle>
         <Input
-          placeholder="Buscar por nombre, cuenta o DNI..."
+          placeholder="Buscar por socio, titular, cuenta, DNI o movil..."
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           className="max-w-md"
@@ -93,21 +141,21 @@ export function SociosPageClient({ socios, loadError }: SociosPageClientProps) {
                 <TableHead>Socio</TableHead>
                 <TableHead>Titular</TableHead>
                 <TableHead>DNI</TableHead>
-                <TableHead>Telefono</TableHead>
+                <TableHead>Movil</TableHead>
                 <TableHead>Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sociosFiltrados.map((socio) => (
-                <TableRow key={`${socio.cuenta}-${socio.numero_socio}`}>
-                  <TableCell>{socio.cuenta}</TableCell>
-                  <TableCell>{socio.numero_socio || "No registrado"}</TableCell>
+                <TableRow key={`${socio.codSoc}-${socio.numeroCuenta}`}>
+                  <TableCell>{socio.numeroCuenta || "No registrado"}</TableCell>
+                  <TableCell>{socio.codSoc || "No registrado"}</TableCell>
                   <TableCell>{socio.titular}</TableCell>
                   <TableCell>{socio.dni || "No registrado"}</TableCell>
-                  <TableCell>{socio.movil_particular || socio.movil_cuenta || "No registrado"}</TableCell>
+                  <TableCell>{socio.movil || "No registrado"}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
-                      <Link href={`/socios/${encodeURIComponent(socio.cuenta)}`}>
+                      <Link href={`/socios/${encodeURIComponent(String(socio.codSoc))}`}>
                         <Button size="sm" variant="outline" className="gap-2">
                           <Eye className="h-4 w-4" />
                           Ver Detalle

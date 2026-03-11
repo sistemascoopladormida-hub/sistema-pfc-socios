@@ -1,8 +1,9 @@
-import { notFound } from "next/navigation";
-import { CalendarDays, FileText, House, Mail, Phone } from "lucide-react";
+"use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { House, Mail, Phone, Users } from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -12,82 +13,97 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getSociosPFC } from "@/lib/readSociosExcel";
-
-type SocioDetallePageProps = {
-  params: {
-    id: string;
-  };
-};
+import type { PfcSociosApiResponse, SocioPFC } from "@/types/pfc-socios";
 
 function valueOrFallback(value: string) {
   return value?.trim().length > 0 ? value : "No registrado";
 }
 
-type HistorialTurno = {
-  fecha: string;
-  hora: string;
-  profesional: string;
-  especialidad: string;
-  estado: "Atendido" | "Pendiente" | "Ausente";
-};
+export default function SocioDetallePage() {
+  const params = useParams<{ id: string }>();
+  const socioId = useMemo(() => Number(params?.id), [params?.id]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [socio, setSocio] = useState<SocioPFC | null>(null);
 
-const historialTurnosMock: HistorialTurno[] = [
-  {
-    fecha: "12/02/2026",
-    hora: "09:00",
-    profesional: "Dr. Juan Perez",
-    especialidad: "Clinica Medica",
-    estado: "Atendido",
-  },
-  {
-    fecha: "20/02/2026",
-    hora: "10:30",
-    profesional: "Lic. Maria Lopez",
-    especialidad: "Psicologia",
-    estado: "Atendido",
-  },
-  {
-    fecha: "05/03/2026",
-    hora: "11:00",
-    profesional: "Dr. Carlos Diaz",
-    especialidad: "Cardiologia",
-    estado: "Pendiente",
-  },
-];
+  useEffect(() => {
+    const abortController = new AbortController();
 
-function getEstadoClass(estado: HistorialTurno["estado"]) {
-  if (estado === "Atendido") return "bg-coopGreen text-white";
-  if (estado === "Pendiente") return "bg-coopBlue text-white";
-  return "bg-red-500 text-white";
-}
+    async function loadSocio() {
+      try {
+        setIsLoading(true);
+        setLoadError(null);
 
-export default async function SocioDetallePage({ params }: SocioDetallePageProps) {
-  let socios;
-  try {
-    socios = await getSociosPFC();
-  } catch {
+        const response = await fetch("/api/test-table", {
+          method: "GET",
+          signal: abortController.signal,
+          cache: "no-store",
+        });
+        const data = (await response.json()) as PfcSociosApiResponse;
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error ?? "Error consultando socio");
+        }
+
+        const currentSocio =
+          data.rows.find((item) => item.codSoc === socioId) ??
+          data.rows.find((item) => String(item.codSoc) === String(params?.id)) ??
+          null;
+
+        setSocio(currentSocio);
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return;
+        setLoadError("No se pudieron cargar los socios del sistema Procoop");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadSocio();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [params?.id, socioId]);
+
+  if (isLoading) {
+    return (
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Detalle de Socio</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600">Cargando socios PFC...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loadError) {
     return (
       <Card className="bg-white">
         <CardHeader>
           <CardTitle>Error al cargar socios</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-600">
-            No se pudo leer el archivo Excel. Verifica que exista en data/socios_pfc.xlsx (o en
-            la raiz del proyecto).
-          </p>
+          <p className="text-sm text-slate-600">{loadError}</p>
         </CardContent>
       </Card>
     );
   }
-  const cuenta = decodeURIComponent(params.id);
-  const socio = socios.find((item) => item.cuenta === cuenta);
 
   if (!socio) {
-    notFound();
+    return (
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Socio no encontrado</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600">No existe un socio para el codigo solicitado.</p>
+        </CardContent>
+      </Card>
+    );
   }
-  const historial = socio.numero_socio === "1787" ? historialTurnosMock : [];
 
   return (
     <div className="space-y-6">
@@ -97,11 +113,11 @@ export default async function SocioDetallePage({ params }: SocioDetallePageProps
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p>
-            <span className="font-semibold">Cuenta:</span> {socio.cuenta}
+            <span className="font-semibold">Socio:</span> {socio.codSoc}
           </p>
           <p>
-            <span className="font-semibold">Numero de socio:</span>{" "}
-            {valueOrFallback(socio.numero_socio)}
+            <span className="font-semibold">Cuenta:</span>{" "}
+            {socio.numeroCuenta ? String(socio.numeroCuenta) : "No registrado"}
           </p>
           <p>
             <span className="font-semibold">Titular:</span> {valueOrFallback(socio.titular)}
@@ -121,77 +137,59 @@ export default async function SocioDetallePage({ params }: SocioDetallePageProps
             <House className="mt-0.5 h-4 w-4 text-coopGreen" />
             <div>
               <p className="font-semibold">Domicilio</p>
-              <p>{valueOrFallback(socio.domicilio)}</p>
+              <p>{valueOrFallback(socio.direccion)}</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <Phone className="mt-0.5 h-4 w-4 text-coopGreen" />
             <div>
-              <p className="font-semibold">Telefono Particular</p>
-              <p>{valueOrFallback(socio.movil_particular)}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Phone className="mt-0.5 h-4 w-4 text-coopBlue" />
-            <div>
-              <p className="font-semibold">Telefono Cuenta</p>
-              <p>{valueOrFallback(socio.movil_cuenta)}</p>
+              <p className="font-semibold">Movil</p>
+              <p>{valueOrFallback(socio.movil)}</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <Mail className="mt-0.5 h-4 w-4 text-coopOrange" />
             <div>
               <p className="font-semibold">Correo</p>
-              <p>{valueOrFallback(socio.correo)}</p>
+              <p>{valueOrFallback(socio.email)}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-white animate-page-enter" style={{ animationDuration: "300ms" }}>
+      <Card className="bg-white">
         <CardHeader className="space-y-1">
           <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-coopBlue" />
-            Historial de Turnos
+            <Users className="h-5 w-5 text-coopBlue" />
+            Adherentes del Socio
           </CardTitle>
-          <p className="text-sm text-slate-600">
-            Consultas de especialistas registradas para este socio
-          </p>
+          <p className="text-sm text-slate-600">Listado de adherentes vinculados al titular</p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {historial.length === 0 ? (
+        <CardContent>
+          {socio.adherentes.length === 0 ? (
             <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-600">
-              <FileText className="h-4 w-4 text-slate-400" />
-              Este socio aun no posee turnos registrados.
+              Este socio aun no posee adherentes registrados.
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Hora</TableHead>
-                  <TableHead>Profesional</TableHead>
-                  <TableHead>Especialidad</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>DNI</TableHead>
+                  <TableHead>Vinculo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {historial.map((item, index) => (
-                  <TableRow key={`${item.fecha}-${item.hora}-${index}`}>
-                    <TableCell>{item.fecha}</TableCell>
-                    <TableCell>{item.hora}</TableCell>
-                    <TableCell>{item.profesional}</TableCell>
-                    <TableCell>{item.especialidad}</TableCell>
-                    <TableCell>
-                      <Badge className={getEstadoClass(item.estado)}>{item.estado}</Badge>
-                    </TableCell>
+                {socio.adherentes.map((adherente, index) => (
+                  <TableRow key={`${adherente.codigo}-${index}`}>
+                    <TableCell>{valueOrFallback(adherente.nombre)}</TableCell>
+                    <TableCell>{valueOrFallback(adherente.dni)}</TableCell>
+                    <TableCell>{valueOrFallback(adherente.vinculo)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-
-          <Button variant="outline">Ver agenda completa del paciente</Button>
         </CardContent>
       </Card>
     </div>

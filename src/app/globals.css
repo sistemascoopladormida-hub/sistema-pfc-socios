@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
+@config "../../tailwind.config.ts";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -121,9 +123,82 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-coopGray text-foreground;
+    font-family: "Poppins", sans-serif;
+    font-weight: 400;
   }
   html {
     @apply font-sans;
   }
+  h1,
+  h2,
+  h3 {
+    font-weight: 700;
+  }
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+  }
+}
+
+@layer components {
+  [data-slot="card"] {
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+
+  [data-slot="card"]:hover {
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+    transform: translateY(-3px);
+  }
+
+  [data-slot="button"] {
+    transition: transform 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  [data-slot="button"]:not(:disabled):hover {
+    transform: scale(1.03);
+  }
+
+  [data-slot="table-row"]:nth-child(even) {
+    background: rgba(245, 247, 251, 0.55);
+  }
+
+  [data-slot="table-row"]:hover {
+    background: rgba(37, 99, 235, 0.07);
+  }
+
+  input,
+  select,
+  textarea {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 10px;
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    outline: none;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 280ms ease-out;
 }

@@ -11,6 +11,14 @@ function toText(value: unknown) {
   return String(value).trim();
 }
 
+function toDateText(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  return toText(value);
+}
+
 function toNumber(value: unknown) {
   const normalized = toText(value);
   if (!normalized) return 0;
@@ -95,6 +103,9 @@ function normalizeRow(row: SqlRow) {
         ["dnititular", "doctitular", "nrodoc", "numdni"]
       )
     ),
+    cdi: toText(
+      pickByAliases(row, normalizedRow, ["CDI", "CUIL"], ["cdi", "cuil", "cuit"])
+    ),
     movil: toText(
       pickByAliases(
         row,
@@ -117,6 +128,14 @@ function normalizeRow(row: SqlRow) {
         normalizedRow,
         ["EMAIL", "CORREO", "MAIL", "EMAIL_SOCIO"],
         ["correo", "email", "mail"]
+      )
+    ),
+    desCat: toText(
+      pickByAliases(
+        row,
+        normalizedRow,
+        ["DES_CAT", "DESCRIPCION_CATEGORIA", "CATEGORIA"],
+        ["descat", "categoria", "cat"]
       )
     ),
     adherenteCodigo: toNumber(
@@ -161,6 +180,14 @@ function normalizeRow(row: SqlRow) {
         ["dniadh", "docadh", "docfliar", "dni"]
       )
     ),
+    adherenteFechaNacimiento: toDateText(
+      pickByAliases(
+        row,
+        normalizedRow,
+        ["FECHA_NACIMIENTO", "FEC_NACIMIENTO", "FEC_NAC", "NACIMIENTO"],
+        ["fechanacimiento", "fecnacimiento", "fecnac", "nacimiento"]
+      )
+    ),
   };
 }
 
@@ -174,6 +201,7 @@ function buildAdherente(row: ReturnType<typeof normalizeRow>): SocioAdherente | 
     nombre: row.adherenteNombre,
     vinculo: row.adherenteVinculo,
     dni: row.adherenteDni,
+    fechaNacimiento: row.adherenteFechaNacimiento,
   };
 }
 
@@ -182,8 +210,23 @@ export async function GET() {
     const pool = await getSqlConnection();
 
     const result = await pool.request().query(`
-      SELECT *
-      FROM dbo.socios_adherentes
+      SELECT
+        APELLIDOS,
+        TELEFONO,
+        MOVIL,
+        COD_SOC,
+        NUMERO_CUENTA,
+        NUM_DNI,
+        CDI,
+        OBS_POSTAL,
+        EMAIL,
+        ADHERENTE_CODIGO,
+        ADHERENTE_NOMBRE,
+        FECHA_NACIMIENTO,
+        VINCULO,
+        DNI_ADHERENTE,
+        DES_CAT
+      FROM dbo.vw_socios_adherentes
     `);
 
     const groupedMap = new Map<number, SocioPFC>();
@@ -198,9 +241,11 @@ export async function GET() {
           numeroCuenta: row.numeroCuenta,
           titular: row.titular,
           dni: row.titularDni,
+          cdi: row.cdi,
           movil: row.movil,
           direccion: row.direccion,
           email: row.email,
+          desCat: row.desCat,
           adherentes: [],
         });
       }
@@ -210,9 +255,11 @@ export async function GET() {
 
       if (!currentSocio.titular && row.titular) currentSocio.titular = row.titular;
       if (!currentSocio.dni && row.titularDni) currentSocio.dni = row.titularDni;
+      if (!currentSocio.cdi && row.cdi) currentSocio.cdi = row.cdi;
       if (!currentSocio.movil && row.movil) currentSocio.movil = row.movil;
       if (!currentSocio.direccion && row.direccion) currentSocio.direccion = row.direccion;
       if (!currentSocio.email && row.email) currentSocio.email = row.email;
+      if (!currentSocio.desCat && row.desCat) currentSocio.desCat = row.desCat;
       if (!currentSocio.numeroCuenta && row.numeroCuenta) currentSocio.numeroCuenta = row.numeroCuenta;
 
       const adherente = buildAdherente(row);

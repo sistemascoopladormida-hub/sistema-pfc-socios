@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { House, Mail, Phone, Users } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -17,6 +20,17 @@ import type { PfcSociosApiResponse, SocioPFC } from "@/types/pfc-socios";
 
 function valueOrFallback(value: string) {
   return value?.trim().length > 0 ? value : "No registrado";
+}
+
+function getCategoriaBadgeClass(categoria: string) {
+  const normalized = categoria.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  if (normalized.includes("PLUS")) {
+    return "bg-purple-600 text-white";
+  }
+  if (normalized.includes("BASICA")) {
+    return "bg-coopBlue text-white";
+  }
+  return "bg-slate-500 text-white";
 }
 
 export default function SocioDetallePage() {
@@ -125,6 +139,14 @@ export default function SocioDetallePage() {
           <p>
             <span className="font-semibold">DNI:</span> {valueOrFallback(socio.dni)}
           </p>
+          <p className="flex items-center gap-2">
+            <span className="font-semibold">Categoria PFC:</span>
+            {socio.desCat ? (
+              <Badge className={getCategoriaBadgeClass(socio.desCat)}>{socio.desCat}</Badge>
+            ) : (
+              "No registrado"
+            )}
+          </p>
         </CardContent>
       </Card>
 
@@ -177,6 +199,7 @@ export default function SocioDetallePage() {
                   <TableHead>Nombre</TableHead>
                   <TableHead>DNI</TableHead>
                   <TableHead>Vinculo</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -185,6 +208,17 @@ export default function SocioDetallePage() {
                     <TableCell>{valueOrFallback(adherente.nombre)}</TableCell>
                     <TableCell>{valueOrFallback(adherente.dni)}</TableCell>
                     <TableCell>{valueOrFallback(adherente.vinculo)}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/socios/${encodeURIComponent(String(socio.codSoc))}/${encodeURIComponent(
+                          String(adherente.codigo)
+                        )}/historial`}
+                      >
+                        <Button size="sm" variant="outline">
+                          Ver historial
+                        </Button>
+                      </Link>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -1,23 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { format, parseISO } from "date-fns";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { CalendarPlus2, CheckCircle2, CircleOff, XCircle } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { DataBadge } from "@/components/ui/data-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Loading } from "@/components/ui/loading";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Table,
   TableBody,
@@ -26,129 +21,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useProfesionales } from "@/lib/profesionales-context";
 import { canAccessModule, useUser } from "@/lib/user-context";
-import { prestaciones } from "@/data/prestaciones";
-import { socios } from "@/data/socios";
-import { type EstadoTurno, type Turno, turnos as initialTurnos } from "@/data/turnos";
 
-type FormTurno = {
-  socio: string;
-  profesional: string;
-  prestacion: string;
+type TurnoEstado = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
+
+type TurnoRow = {
+  id: number;
+  nombre: string;
   fecha: string;
   hora: string;
-};
-
-type PendingAction = {
-  turnoId: number;
-  estado: EstadoTurno;
-  label: string;
-};
-
-const emptyForm: FormTurno = {
-  socio: "",
-  profesional: "",
-  prestacion: "",
-  fecha: "",
-  hora: "",
-};
-
-const estadoBadgeClass: Record<EstadoTurno, string> = {
-  Programado: "bg-coopBlue text-white",
-  Atendido: "bg-coopGreen text-white",
-  "No asistio": "bg-red-600 text-white",
-  Cancelado: "bg-slate-500 text-white",
+  estado: TurnoEstado | string;
+  cod_soc: number | string;
+  adherente_codigo: number | string;
+  profesional: string;
+  prestacion: string;
 };
 
 export default function TurnosPage() {
   const { role } = useUser();
-  const { profesionales } = useProfesionales();
   const [isLoading, setIsLoading] = useState(true);
-  const [turnos, setTurnos] = useState<Turno[]>(initialTurnos);
-  const [open, setOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [form, setForm] = useState<FormTurno>(emptyForm);
+  const [turnos, setTurnos] = useState<TurnoRow[]>([]);
+
+  async function fetchTurnos() {
+    const response = await fetch("/api/turnos", { cache: "no-store" });
+    const data = (await response.json()) as { success: boolean; data?: TurnoRow[]; error?: string };
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "No se pudieron cargar turnos");
+    }
+    setTurnos(data.data ?? []);
+  }
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timer);
+    async function bootstrap() {
+      try {
+        setIsLoading(true);
+        await fetchTurnos();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "No se pudieron cargar turnos");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    bootstrap();
   }, []);
 
-  const nextId = useMemo(() => {
-    return turnos.length > 0 ? Math.max(...turnos.map((turno) => turno.id)) + 1 : 1;
-  }, [turnos]);
-  const profesionalesActivos = useMemo(
-    () => profesionales.filter((item) => item.estado === "activo"),
-    [profesionales]
-  );
-  const socioOptions = useMemo(() => {
-    const base = socios.map((item) => item.nombre);
-    if (form.socio && !base.includes(form.socio)) {
-      return [form.socio, ...base];
-    }
-    return base;
-  }, [form.socio]);
+  function normalizeHora(raw: string) {
+    const trimmed = String(raw ?? "").trim();
+    if (!trimmed) return "";
+    if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+    if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
+    const match = trimmed.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (!match) return "";
+    const [, hh, mm, ss] = match;
+    return `${hh}:${mm}:${ss ?? "00"}`;
+  }
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const socioFromQuery = params.get("socio");
-    if (socioFromQuery) {
-      setForm((prev) => ({ ...prev, socio: socioFromQuery }));
-      setOpen(true);
-    }
-  }, []);
+  function toTurnoDateTime(turno: TurnoRow) {
+    const fecha = String(turno.fecha).slice(0, 10);
+    const hora = normalizeHora(String(turno.hora));
+    if (!hora) return null;
+    const parsed = new Date(`${fecha}T${hora}`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
 
-  const updateTurnoEstado = (id: number, estado: EstadoTurno) => {
-    setTurnos((prev) =>
-      prev.map((turno) => (turno.id === id ? { ...turno, estado } : turno))
-    );
-    toast.success("Estado del turno actualizado");
-  };
+  function canMarkAsAtendido(turno: TurnoRow) {
+    const estado = String(turno.estado).toUpperCase();
+    if (estado !== "RESERVADO") return false;
+    const turnoDate = toTurnoDateTime(turno);
+    if (!turnoDate) return false;
+    return turnoDate.getTime() <= Date.now();
+  }
 
-  const handleCreateTurno = () => {
-    if (!form.socio || !form.profesional || !form.prestacion || !form.fecha || !form.hora) {
+  function canMarkAsAusente(turno: TurnoRow) {
+    return canMarkAsAtendido(turno);
+  }
+
+  async function updateEstado(turnoId: number, action: "cancelar" | "atender" | "ausente") {
+    const response = await fetch(`/api/turnos/${turnoId}/${action}`, {
+      method: "PUT",
+    });
+    const data = (await response.json()) as { success: boolean; error?: string; message?: string };
+    if (!response.ok || !data.success) {
+      toast.error(data.error ?? "No se pudo actualizar el estado");
       return;
     }
 
-    const selectedProfesional = profesionalesActivos.find(
-      (item) => item.nombre === form.profesional
-    );
-
-    const newTurno: Turno = {
-      id: nextId,
-      profesional_id: selectedProfesional?.id ?? "",
-      socio: form.socio,
-      socio_dni: "",
-      socio_telefono: "",
-      socio_cuenta: "",
-      socio_domicilio: "",
-      socio_correo: "",
-      profesional: form.profesional,
-      prestacion: form.prestacion,
-      fecha: form.fecha,
-      hora: form.hora,
-      estado: "Programado",
-    };
-
-    setTurnos((prev) => [newTurno, ...prev]);
-    setForm(emptyForm);
-    setOpen(false);
-    toast.success("Turno creado correctamente");
-  };
-
-  const requestEstadoChange = (turnoId: number, estado: EstadoTurno, label: string) => {
-    setPendingAction({ turnoId, estado, label });
-    setConfirmOpen(true);
-  };
-
-  const confirmEstadoChange = () => {
-    if (!pendingAction) return;
-    updateTurnoEstado(pendingAction.turnoId, pendingAction.estado);
-    setPendingAction(null);
-    setConfirmOpen(false);
-  };
+    toast.success(data.message ?? "Estado actualizado");
+    await fetchTurnos();
+  }
 
   if (!canAccessModule(role, "turnos")) {
     return (
@@ -168,127 +129,40 @@ export default function TurnosPage() {
   }
 
   return (
-    <Card className="bg-white shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle>Gestion de Turnos</CardTitle>
+    <div className="mx-auto space-y-6">
+      <PageHeader
+        title="Gestión de Turnos"
+        breadcrumbs={["operación diaria"]}
+        rightSlot={
+          <Link href="/turnos/nuevo">
+            <Button className="h-10 rounded-lg bg-[#0D6E5A] px-4 text-white shadow-sm hover:-translate-y-0.5 hover:bg-[#0B5B4B]">
+              <CalendarPlus2 className="mr-2 h-4 w-4" />
+              Nuevo Turno
+            </Button>
+          </Link>
+        }
+      />
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger
-            render={
-              <Button className="bg-coopBlue text-white hover:bg-coopSecondary">
-                Nuevo Turno
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Nuevo Turno</DialogTitle>
-              <DialogDescription>
-                Completa los datos para registrar un nuevo turno en la agenda.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-3">
-              <label className="grid gap-1 text-sm">
-                <span>Socio</span>
-                <select
-                  className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.socio}
-                  onChange={(event) => setForm((prev) => ({ ...prev, socio: event.target.value }))}
-                >
-                  <option value="">Seleccionar socio</option>
-                  {socioOptions.map((socioNombre) => (
-                    <option key={socioNombre} value={socioNombre}>
-                      {socioNombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Profesional</span>
-                <select
-                  className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.profesional}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, profesional: event.target.value }))
-                  }
-                >
-                  <option value="">Seleccionar profesional</option>
-                  {profesionalesActivos.length === 0 && (
-                    <option value="" disabled>
-                      No hay profesionales activos
-                    </option>
-                  )}
-                  {profesionalesActivos.map((profesional) => (
-                    <option key={profesional.id} value={profesional.nombre}>
-                      {profesional.nombre} - {profesional.especialidad}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Prestacion</span>
-                <select
-                  className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.prestacion}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, prestacion: event.target.value }))
-                  }
-                >
-                  <option value="">Seleccionar prestacion</option>
-                  {prestaciones.map((prestacion) => (
-                    <option key={prestacion.id} value={prestacion.nombre}>
-                      {prestacion.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="grid grid-cols-2 gap-3">
-                <label className="grid gap-1 text-sm">
-                  <span>Fecha</span>
-                  <input
-                    type="date"
-                    className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                    value={form.fecha}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, fecha: event.target.value }))
-                    }
-                  />
-                </label>
-
-                <label className="grid gap-1 text-sm">
-                  <span>Hora</span>
-                  <input
-                    type="time"
-                    className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                    value={form.hora}
-                    onChange={(event) => setForm((prev) => ({ ...prev, hora: event.target.value }))}
-                  />
-                </label>
-              </div>
-
-              <Button
-                onClick={handleCreateTurno}
-                className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary"
-              >
-                Guardar turno
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </CardHeader>
-
-      <CardContent>
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle className="text-[13px] font-semibold uppercase tracking-[0.08em] text-pfcText-muted">
+            Turnos y acciones
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
         {turnos.length === 0 ? (
-          <EmptyState message="No hay turnos disponibles." />
+          <EmptyState
+            title="Sin turnos para mostrar"
+            message="Todavía no hay turnos cargados en esta vista. Puedes crear uno nuevo para comenzar."
+          />
         ) : (
-          <Table>
+          <Table className="min-w-[1200px]">
             <TableHeader>
               <TableRow>
+                <TableHead>ID</TableHead>
                 <TableHead>Socio</TableHead>
+                <TableHead>Adherente</TableHead>
+                <TableHead>Nombre</TableHead>
                 <TableHead>Profesional</TableHead>
                 <TableHead>Prestacion</TableHead>
                 <TableHead>Fecha</TableHead>
@@ -298,64 +172,79 @@ export default function TurnosPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {turnos.map((turno) => (
-                <TableRow key={turno.id}>
-                  <TableCell>{turno.socio}</TableCell>
+              {turnos.map((turno, idx) => (
+                <motion.tr
+                  key={turno.id}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.2, delay: idx * 0.04 }}
+                  className="border-b"
+                >
+                  <TableCell>{turno.id}</TableCell>
+                  <TableCell>{turno.cod_soc}</TableCell>
+                  <TableCell>{turno.adherente_codigo}</TableCell>
+                  <TableCell>{turno.nombre || "No registrado"}</TableCell>
                   <TableCell>{turno.profesional}</TableCell>
                   <TableCell>{turno.prestacion}</TableCell>
-                  <TableCell>{format(parseISO(turno.fecha), "dd/MM/yyyy")}</TableCell>
-                  <TableCell>{turno.hora}</TableCell>
+
                   <TableCell>
-                    <Badge className={estadoBadgeClass[turno.estado]}>{turno.estado}</Badge>
+                    {new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" })}
+                  </TableCell>
+
+                  <TableCell>{normalizeHora(String(turno.hora)).slice(0, 5) || "No registrada"}</TableCell>
+
+                  <TableCell>
+                    <DataBadge
+                      kind={
+                        String(turno.estado).toUpperCase() === "RESERVADO"
+                          ? "reservado"
+                          : String(turno.estado).toUpperCase() === "ATENDIDO"
+                            ? "atendido"
+                            : String(turno.estado).toUpperCase() === "AUSENTE"
+                              ? "ausente"
+                              : "cancelado"
+                      }
+                    >
+                      {String(turno.estado)}
+                    </DataBadge>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm">
-                        Ver
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="bg-coopBlue text-white hover:bg-coopSecondary"
-                        onClick={() =>
-                          requestEstadoChange(turno.id, "Atendido", "Confirmar atencion")
+                      <ActionButton
+                        tone="teal"
+                        icon={<CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
+                        label="Atendido"
+                        onClick={() => updateEstado(turno.id, "atender")}
+                        disabled={!canMarkAsAtendido(turno)}
+                        title={canMarkAsAtendido(turno) ? "Marcar como atendido" : "Disponible al pasar horario"}
+                      />
+                      <ActionButton
+                        tone="amber"
+                        icon={<CircleOff className="mr-1 h-3.5 w-3.5" />}
+                        label="Ausente"
+                        onClick={() => updateEstado(turno.id, "ausente")}
+                        disabled={!canMarkAsAusente(turno)}
+                        title={canMarkAsAusente(turno) ? "Marcar como ausente" : "Disponible al pasar horario"}
+                      />
+                      <ActionButton
+                        tone="red"
+                        icon={<XCircle className="mr-1 h-3.5 w-3.5" />}
+                        label="Cancelar"
+                        onClick={() => updateEstado(turno.id, "cancelar")}
+                        disabled={
+                          String(turno.estado).toUpperCase() === "CANCELADO" ||
+                          String(turno.estado).toUpperCase() === "ATENDIDO"
                         }
-                      >
-                        Confirmar atencion
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          requestEstadoChange(turno.id, "No asistio", "Marcar como no asistio")
-                        }
-                      >
-                        Marcar No asistio
-                      </Button>
+                      />
                     </div>
                   </TableCell>
-                </TableRow>
+                </motion.tr>
               ))}
             </TableBody>
           </Table>
         )}
       </CardContent>
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{pendingAction?.label ?? "Confirmar accion"}</DialogTitle>
-            <DialogDescription>¿Confirmar esta accion?</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Cancelar
-            </Button>
-            <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={confirmEstadoChange}>
-              Confirmar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+      </Card>
+    </div>
   );
 }

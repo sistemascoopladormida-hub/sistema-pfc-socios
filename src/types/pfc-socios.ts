@@ -3,6 +3,7 @@ export type SocioAdherente = {
   nombre: string;
   vinculo: string;
   dni: string;
+  fechaNacimiento: string;
 };
 
 export type SocioPFC = {
@@ -10,9 +11,11 @@ export type SocioPFC = {
   numeroCuenta: number;
   titular: string;
   dni: string;
+  cdi: string;
   movil: string;
   direccion: string;
   email: string;
+  desCat: string;
   adherentes: SocioAdherente[];
 };
 

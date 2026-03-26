@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { ROLES, ROLE_USERS } from "@/lib/roles";
 import type { UserRole } from "@/types/roles";
 
 export type SpecialistAccount = {
@@ -21,7 +22,9 @@ type AppModule =
   | "dashboard"
   | "socios"
   | "turnos"
+  | "agenda-profesional"
   | "profesionales"
+  | "especialidades"
   | "prestaciones"
   | "reportes"
   | "especialista";
@@ -40,31 +43,71 @@ export const specialistAccounts: SpecialistAccount[] = [
 ];
 
 const roleModuleAccess: Record<UserRole, AppModule[]> = {
-  recepcion: ["dashboard", "socios", "turnos", "profesionales"],
-  profesional: ["dashboard", "profesionales", "turnos"],
-  directivo: ["dashboard", "reportes", "prestaciones"],
-  especialista: ["especialista"],
+  admin: [
+    "dashboard",
+    "socios",
+    "turnos",
+    "agenda-profesional",
+    "profesionales",
+    "especialidades",
+    "prestaciones",
+  ],
+  directivo: ["dashboard", "reportes"],
 };
 
 export const roleLabel: Record<UserRole, string> = {
-  recepcion: "Recepcion",
-  profesional: "Profesional",
+  admin: "Administrador",
   directivo: "Directivo",
-  especialista: "Especialista",
 };
 
 export const simulatedUserByRole: Record<UserRole, string> = {
-  recepcion: "Maria Lopez",
-  profesional: "Dr. Martinez",
-  directivo: "Administracion",
-  especialista: "Especialista",
+  admin: ROLE_USERS.admin,
+  directivo: ROLE_USERS.directivo,
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
 
-export function UserProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<UserRole>("recepcion");
+type UserProviderProps = {
+  children: ReactNode;
+  initialRole?: UserRole;
+};
+
+export function UserProvider({ children, initialRole }: UserProviderProps) {
+  const [role, setRole] = useState<UserRole>(initialRole ?? ROLES.DIRECTIVO);
   const [specialistUsuario, setSpecialistUsuario] = useState<string>(specialistAccounts[0].usuario);
+  useEffect(() => {
+    const storedRole = localStorage.getItem("rol");
+    if (storedRole === ROLES.ADMIN || storedRole === ROLES.DIRECTIVO) {
+      setRole(storedRole);
+      return;
+    }
+    if (storedRole === "recepcion") {
+      setRole(ROLES.ADMIN);
+      localStorage.setItem("rol", ROLES.ADMIN);
+      localStorage.setItem("usuario", ROLE_USERS.admin);
+      return;
+    }
+    if (initialRole) {
+      localStorage.setItem("rol", initialRole);
+      localStorage.setItem("usuario", ROLE_USERS[initialRole]);
+    }
+  }, [initialRole]);
+
+  useEffect(() => {
+    const syncRole = () => {
+      const storedRole = localStorage.getItem("rol");
+      if (storedRole === ROLES.ADMIN || storedRole === ROLES.DIRECTIVO) {
+        setRole(storedRole);
+      }
+    };
+    window.addEventListener("storage", syncRole);
+    window.addEventListener("roles:changed", syncRole as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncRole);
+      window.removeEventListener("roles:changed", syncRole as EventListener);
+    };
+  }, []);
+
 
   const specialistAccount =
     specialistAccounts.find((item) => item.usuario === specialistUsuario) ?? specialistAccounts[0];

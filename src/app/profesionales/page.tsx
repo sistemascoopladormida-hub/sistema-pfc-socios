@@ -1,24 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
-import { Plus, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Pencil, Plus, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Loading } from "@/components/ui/loading";
 import {
   Table,
   TableBody,
@@ -27,47 +25,62 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useProfesionales } from "@/lib/profesionales-context";
 import { canAccessModule, useUser } from "@/lib/user-context";
+
+type ProfesionalApi = {
+  id: number;
+  nombre: string;
+  especialidad_id: number;
+  especialidad: string;
+  pacientes_mensuales: number | null;
+  turnos_mes: number | null;
+  cupo_restante: number | null;
+  duracion_turno: number | null;
+  activo: boolean | number;
+};
+
+type EspecialidadApi = {
+  id: number;
+  nombre: string;
+};
 
 type FormState = {
   nombre: string;
-  especialidad: string;
-  dni: string;
-  telefono: string;
-  correo: string;
-  direccion: string;
-  matricula: string;
-  estado: "activo" | "inactivo";
+  especialidad_id: string;
+  duracion_turno: string;
+  pacientes_mensuales: string;
 };
 
 const emptyForm: FormState = {
   nombre: "",
-  especialidad: "",
-  dni: "",
-  telefono: "",
-  correo: "",
-  direccion: "",
-  matricula: "",
-  estado: "activo",
+  especialidad_id: "",
+  duracion_turno: "",
+  pacientes_mensuales: "",
 };
-
-const especialidades = [
-  "Clinica Medica",
-  "Psicologia",
-  "Kinesiologia",
-  "Odontologia",
-  "Cardiologia",
-  "Nutricion",
-  "Fonoaudiologia",
-  "Otro",
-];
 
 export default function ProfesionalesPage() {
   const { role } = useUser();
-  const { profesionales, createProfesional } = useProfesionales();
+  const [profesionales, setProfesionales] = useState<ProfesionalApi[]>([]);
+  const [especialidades, setEspecialidades] = useState<EspecialidadApi[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [editingProfesional, setEditingProfesional] = useState<ProfesionalApi | null>(null);
+
+  useEffect(() => {
+    async function bootstrap() {
+      try {
+        setLoading(true);
+        await Promise.all([fetchProfesionales(), fetchEspecialidades()]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "No se pudieron cargar los datos");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    bootstrap();
+  }, []);
 
   if (!canAccessModule(role, "profesionales")) {
     return (
@@ -82,27 +95,117 @@ export default function ProfesionalesPage() {
     );
   }
 
-  const handleCreate = () => {
-    if (!form.nombre.trim() || !form.especialidad.trim() || !form.telefono.trim()) {
-      toast.error("Complete los campos obligatorios");
+  async function fetchProfesionales() {
+    const response = await fetch("/api/profesionales", { cache: "no-store" });
+    const data = (await response.json()) as {
+      success: boolean;
+      data?: ProfesionalApi[];
+      error?: string;
+    };
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "No se pudieron cargar profesionales");
+    }
+
+    setProfesionales(data.data ?? []);
+  }
+
+  async function fetchEspecialidades() {
+    const response = await fetch("/api/especialidades", { cache: "no-store" });
+    const data = (await response.json()) as {
+      success: boolean;
+      data?: EspecialidadApi[];
+      error?: string;
+    };
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error ?? "No se pudieron cargar especialidades");
+    }
+
+    setEspecialidades(data.data ?? []);
+  }
+
+  function openCreateModal() {
+    setEditingProfesional(null);
+    setForm(emptyForm);
+    setOpen(true);
+  }
+
+  function openEditModal(item: ProfesionalApi) {
+    setEditingProfesional(item);
+    setForm({
+      nombre: item.nombre,
+      especialidad_id: String(item.especialidad_id),
+      duracion_turno: String(item.duracion_turno ?? ""),
+      pacientes_mensuales: String(item.pacientes_mensuales ?? ""),
+    });
+    setOpen(true);
+  }
+
+  async function handleSave() {
+    const nombre = form.nombre.trim();
+    const especialidadId = Number(form.especialidad_id);
+    const duracionTurno = Number(form.duracion_turno);
+    const pacientesMensuales = Number(form.pacientes_mensuales || 0);
+
+    if (!nombre || !Number.isInteger(especialidadId) || especialidadId <= 0) {
+      toast.error("Completa nombre y especialidad");
       return;
     }
 
-    createProfesional({
-      nombre: form.nombre.trim(),
-      especialidad: form.especialidad.trim(),
-      dni: form.dni.trim(),
-      telefono: form.telefono.trim(),
-      correo: form.correo.trim(),
-      direccion: form.direccion.trim(),
-      matricula: form.matricula.trim(),
-      estado: form.estado,
-    });
+    if (!Number.isInteger(duracionTurno) || duracionTurno <= 0) {
+      toast.error("La duracion del turno debe ser un numero valido");
+      return;
+    }
 
-    toast.success("Profesional creado correctamente");
+    const method = editingProfesional ? "PUT" : "POST";
+    const endpoint = editingProfesional
+      ? `/api/profesionales/${editingProfesional.id}`
+      : "/api/profesionales";
+
+    const response = await fetch(endpoint, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre,
+        especialidad_id: especialidadId,
+        duracion_turno: duracionTurno,
+        pacientes_mensuales: Number.isInteger(pacientesMensuales) ? pacientesMensuales : 0,
+      }),
+    });
+    const data = (await response.json()) as { success: boolean; error?: string };
+    if (!response.ok || !data.success) {
+      toast.error(data.error ?? "No se pudo guardar el profesional");
+      return;
+    }
+
+    toast.success(editingProfesional ? "Profesional actualizado" : "Profesional creado correctamente");
     setForm(emptyForm);
     setOpen(false);
-  };
+    setEditingProfesional(null);
+    await fetchProfesionales();
+  }
+
+  async function handleDelete(item: ProfesionalApi) {
+    const confirmed = window.confirm("¿Desea eliminar este profesional?");
+    if (!confirmed) return;
+
+    const response = await fetch(`/api/profesionales/${item.id}`, {
+      method: "DELETE",
+    });
+    const data = (await response.json()) as { success: boolean; error?: string };
+    if (!response.ok || !data.success) {
+      toast.error(data.error ?? "No se pudo eliminar el profesional");
+      return;
+    }
+
+    toast.success("Profesional eliminado");
+    await fetchProfesionales();
+  }
+
+  if (loading) {
+    return <Loading label="Cargando profesionales..." />;
+  }
 
   return (
     <Card className="bg-white shadow-sm">
@@ -115,7 +218,7 @@ export default function ProfesionalesPage() {
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger
             render={
-              <Button className="bg-coopBlue text-white hover:bg-coopSecondary">
+              <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
                 <Plus className="mr-2 h-4 w-4" />
                 Nuevo Profesional
               </Button>
@@ -123,12 +226,12 @@ export default function ProfesionalesPage() {
           />
           <DialogContent className="sm:max-w-xl">
             <DialogHeader>
-              <DialogTitle>Nuevo Profesional</DialogTitle>
-              <DialogDescription>Registrar especialista para P.F.C Servicios Sociales.</DialogDescription>
+              <DialogTitle>{editingProfesional ? "Editar Profesional" : "Nuevo Profesional"}</DialogTitle>
+              <DialogDescription>Registrar profesional para la gestion de turnos PFC.</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm sm:col-span-2">
+              <label className="grid gap-1 text-sm">
                 <span>Nombre Completo *</span>
                 <Input
                   value={form.nombre}
@@ -139,93 +242,50 @@ export default function ProfesionalesPage() {
               <label className="grid gap-1 text-sm">
                 <span>Especialidad *</span>
                 <select
-                  className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.especialidad}
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+                  value={form.especialidad_id}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, especialidad: event.target.value }))
+                    setForm((prev) => ({ ...prev, especialidad_id: event.target.value }))
                   }
                 >
                   <option value="">Seleccionar</option>
                   {especialidades.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                    <option key={item.id} value={String(item.id)}>
+                      {item.nombre}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="grid gap-1 text-sm">
-                <span>DNI</span>
+                <span>Pacientes mensuales</span>
                 <Input
-                  value={form.dni}
-                  onChange={(event) => setForm((prev) => ({ ...prev, dni: event.target.value }))}
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Telefono *</span>
-                <Input
-                  value={form.telefono}
+                  type="number"
+                  min={0}
+                  value={form.pacientes_mensuales}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, telefono: event.target.value }))
+                    setForm((prev) => ({ ...prev, pacientes_mensuales: event.target.value }))
                   }
                 />
               </label>
 
               <label className="grid gap-1 text-sm">
-                <span>Correo electronico</span>
+                <span>Duracion turno (min) *</span>
                 <Input
-                  value={form.correo}
-                  onChange={(event) => setForm((prev) => ({ ...prev, correo: event.target.value }))}
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm sm:col-span-2">
-                <span>Direccion</span>
-                <Input
-                  value={form.direccion}
+                  type="number"
+                  min={5}
+                  step={5}
+                  value={form.duracion_turno}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, direccion: event.target.value }))
+                    setForm((prev) => ({ ...prev, duracion_turno: event.target.value }))
                   }
                 />
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Matricula profesional</span>
-                <Input
-                  value={form.matricula}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, matricula: event.target.value }))
-                  }
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Estado</span>
-                <select
-                  className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.estado}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      estado: event.target.value as "activo" | "inactivo",
-                    }))
-                  }
-                >
-                  <option value="activo">Activo</option>
-                  <option value="inactivo">Inactivo</option>
-                </select>
               </label>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>
-                Cancelar
-              </Button>
-              <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleCreate}>
-                Guardar
-              </Button>
-            </DialogFooter>
+            <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
+              {editingProfesional ? "Actualizar" : "Guardar"}
+            </Button>
           </DialogContent>
         </Dialog>
       </CardHeader>
@@ -237,38 +297,60 @@ export default function ProfesionalesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Nombre</TableHead>
+                <TableHead>Profesional</TableHead>
                 <TableHead>Especialidad</TableHead>
-                <TableHead>Telefono</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Accion</TableHead>
+                <TableHead>Cupo mensual</TableHead>
+                <TableHead>Duracion turno</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {profesionales.map((profesional) => (
                 <TableRow key={profesional.id}>
-                  <TableCell>{profesional.id}</TableCell>
                   <TableCell>{profesional.nombre}</TableCell>
                   <TableCell>{profesional.especialidad}</TableCell>
-                  <TableCell>{profesional.telefono || "No registrado"}</TableCell>
                   <TableCell>
-                    <Badge
-                      className={
-                        profesional.estado === "activo"
-                          ? "bg-coopGreen text-white"
-                          : "bg-slate-400 text-white"
-                      }
-                    >
-                      {profesional.estado === "activo" ? "Activo" : "Inactivo"}
-                    </Badge>
+                    {Number.isFinite(Number(profesional.pacientes_mensuales)) ? (
+                      <div className="space-y-1 text-sm">
+                        <p>
+                          {Number(profesional.turnos_mes ?? 0)} / {Number(profesional.pacientes_mensuales)} usados
+                        </p>
+                        <p
+                          className={
+                            Number(profesional.cupo_restante ?? 0) <= 0
+                              ? "font-medium text-red-600"
+                              : "text-slate-600"
+                          }
+                        >
+                          Restantes: {Math.max(Number(profesional.cupo_restante ?? 0), 0)}
+                        </p>
+                      </div>
+                    ) : (
+                      "No definido"
+                    )}
                   </TableCell>
+                  <TableCell>{profesional.duracion_turno ? `${profesional.duracion_turno} min` : "-"}</TableCell>
                   <TableCell>
-                    <Link href={`/profesionales/${profesional.id}`}>
-                      <Button size="sm" variant="outline">
-                        Ver
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => openEditModal(profesional)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Editar
                       </Button>
-                    </Link>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="gap-1"
+                        onClick={() => handleDelete(profesional)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

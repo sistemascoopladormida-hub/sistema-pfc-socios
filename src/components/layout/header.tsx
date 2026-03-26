@@ -1,11 +1,11 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { ChevronDown, LogOut, Menu, Settings, UserCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ChevronDown, ChevronRight, LogOut, Menu, Settings, UserCircle2 } from "lucide-react";
+import { motion } from "framer-motion";
 
-import { roleLabel, specialistAccounts, useUser } from "@/lib/user-context";
-import { useProfesionales } from "@/lib/profesionales-context";
-import type { UserRole } from "@/types/roles";
+import { roleLabel, simulatedUserByRole, useUser } from "@/lib/user-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,22 +15,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "Panel de control",
   "/socios": "Socios PFC",
   "/turnos": "Turnos",
+  "/agenda-profesional": "Agenda Profesional",
   "/profesionales": "Profesionales",
+  "/especialidades": "Especialidades",
   "/prestaciones": "Prestaciones",
   "/reportes": "Reportes",
-  "/especialista": "Panel del Especialista",
 };
 
 type HeaderProps = {
@@ -38,76 +32,78 @@ type HeaderProps = {
 };
 
 export function Header({ onMenuClick }: HeaderProps) {
+  const router = useRouter();
   const pathname = usePathname();
-  const { role, setRole, specialistAccount, setSpecialistAccount } = useUser();
-  const { profesionales } = useProfesionales();
+  const { role } = useUser();
+  const [elevated, setElevated] = useState(false);
 
   const title =
     pageTitles[pathname] ??
     Object.entries(pageTitles).find(([key]) => pathname.startsWith(`${key}/`))?.[1] ??
     "Panel de Gestion";
 
-  const specialistName =
-    profesionales.find((item) => item.id === specialistAccount.profesional_id)?.nombre ??
-    specialistAccount.usuario;
-  const userDisplay =
-    role === "especialista"
-      ? `${roleLabel[role]} - ${specialistName}`
-      : `${roleLabel[role]} - ${role === "recepcion" ? "Maria Lopez" : role === "profesional" ? "Dr. Martinez" : "Administracion"}`;
+  const userDisplay = `${roleLabel[role]} - ${simulatedUserByRole[role]}`;
+  const breadcrumbs = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setElevated(window.scrollY > 8);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  function handleLogout() {
+    localStorage.clear();
+    document.cookie = "rol=; path=/; Max-Age=0";
+    document.cookie = "usuario=; path=/; Max-Age=0";
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
+    <header
+      className={`glass-header py-2 flex flex-row justify-between items-center sticky top-0 z-20 border-b border-pfcBorder px-6 transition-shadow ${
+        elevated ? "shadow-sm" : ""
+      }`}
+    >
       <div className="flex items-center gap-3">
-        <Button variant="outline" size="icon-sm" className="md:hidden" onClick={onMenuClick}>
-          <Menu className="h-4 w-4" />
-        </Button>
-        <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
+        <div className="flex h-14 items-center gap-3">
+          <Button variant="outline" size="icon-sm" className="md:hidden" onClick={onMenuClick}>
+            <Menu className="h-4 w-4" />
+          </Button>
+          <div className="">
+            <motion.h1
+              key={title}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className="font-display text-[22px] leading-none text-pfcText-primary"
+            >
+              {title}
+            </motion.h1>
+            <div className="mt-1 hidden items-center gap-1 text-[11px] text-pfcText-muted md:flex">
+              <span>Inicio</span>
+              {breadcrumbs.map((crumb) => (
+                <span key={crumb} className="flex items-center gap-1">
+                  <ChevronRight className="h-3 w-3" />
+                  <span className="capitalize">{crumb.replace("-", " ")}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="w-44">
-          <Select value={role} onValueChange={(value) => setRole(value as UserRole)}>
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Seleccionar rol" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recepcion">Recepcion</SelectItem>
-              <SelectItem value="profesional">Profesional</SelectItem>
-              <SelectItem value="directivo">Directivo</SelectItem>
-              <SelectItem value="especialista">Especialista</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {role === "especialista" && (
-          <div className="w-44">
-            <Select value={specialistAccount.usuario} onValueChange={setSpecialistAccount}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Especialista" />
-              </SelectTrigger>
-              <SelectContent>
-                {specialistAccounts.map((account) => {
-                  const profesional =
-                    profesionales.find((item) => item.id === account.profesional_id)?.nombre ??
-                    account.usuario;
-                  return (
-                    <SelectItem key={account.usuario} value={account.usuario}>
-                      {profesional}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        <Badge className="bg-coopBlue text-white">{roleLabel[role]}</Badge>
+      <div className="flex h-14 items-center gap-3">
+        <Badge className="rounded-lg bg-pfc-100 text-pfc-700">{roleLabel[role]}</Badge>
 
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" className="gap-3 px-2" />}>
             <div className="flex items-center gap-3">
-              <span className="hidden text-sm text-slate-700 lg:inline">{userDisplay}</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200">
+              <span className="hidden text-sm text-pfcText-secondary lg:inline">{userDisplay}</span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pfc-100 ring-1 ring-pfc-200">
                 <UserCircle2 className="h-5 w-5 text-slate-700" />
               </div>
               <ChevronDown className="h-4 w-4 text-slate-500" />
@@ -123,7 +119,7 @@ export function Header({ onMenuClick }: HeaderProps) {
               Configuracion
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive">
+            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
               Cerrar sesion
             </DropdownMenuItem>

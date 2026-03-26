@@ -23,8 +23,17 @@ type TurnoRecienteRow = {
   hora: string;
   estado: string;
   cod_soc: number | string;
+  adherente_codigo: number | string;
   prestacion: string;
   profesional: string;
+};
+
+type SocioLookupRow = {
+  COD_SOC: number | string;
+  ADHERENTE_CODIGO: number | string;
+  ADHERENTE_NOMBRE: string | null;
+  APELLIDOS: string | null;
+  VINCULO: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -91,6 +100,7 @@ export async function GET() {
           t.hora,
           t.estado,
           t.cod_soc,
+          t.adherente_codigo,
           p.nombre as prestacion,
           pr.nombre as profesional
         FROM turnos t
@@ -160,13 +170,46 @@ export async function GET() {
       total: toNumber(row.total),
     }));
 
-    const turnosRecientes = (turnosRecientesResult.recordset as TurnoRecienteRow[]).map((row) => ({
+    const turnosRows = turnosRecientesResult.recordset as TurnoRecienteRow[];
+    const codSocList = [
+      ...new Set(turnosRows.map((item) => Number(item.cod_soc)).filter((value) => Number.isInteger(value))),
+    ];
+    const socioNombreMap = new Map<string, string>();
+
+    if (codSocList.length > 0) {
+      const sociosResult = await billingPool.request().query(`
+        SELECT
+          COD_SOC,
+          ADHERENTE_CODIGO,
+          ADHERENTE_NOMBRE,
+          APELLIDOS,
+          VINCULO
+        FROM PR_DORM.dbo.vw_socios_adherentes
+        WHERE COD_SOC IN (${codSocList.join(",")})
+      `);
+
+      for (const socio of sociosResult.recordset as SocioLookupRow[]) {
+        const codSoc = Number(socio.COD_SOC);
+        const adherenteCodigo = Number(socio.ADHERENTE_CODIGO);
+        const nombre = String(socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "").trim();
+        if (!nombre) continue;
+        socioNombreMap.set(`${codSoc}-${adherenteCodigo}`, nombre);
+        if (String(socio.VINCULO ?? "").trim().toUpperCase() === "TITULAR") {
+          socioNombreMap.set(`${codSoc}-0`, nombre);
+        }
+      }
+    }
+
+    const turnosRecientes = turnosRows.map((row) => ({
       id: row.id,
       // Convertimos a Date antes de llamar al método
       fecha: new Date(row.fecha).toISOString().split('T')[0], 
       hora: new Date(row.hora).toISOString().split('T')[1].slice(0, 5),
       estado: row.estado,
-      socio: String(row.cod_soc),
+      socio:
+        socioNombreMap.get(`${Number(row.cod_soc)}-${Number(row.adherente_codigo)}`) ??
+        socioNombreMap.get(`${Number(row.cod_soc)}-0`) ??
+        `Socio ${row.cod_soc}`,
       cod_soc: row.cod_soc,
       prestacion: row.prestacion,
       profesional: row.profesional,

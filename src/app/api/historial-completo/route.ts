@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
+import { calcularEdad } from "@/lib/adherentes-beneficios";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type HistorialRow = {
@@ -37,6 +38,20 @@ type CoberturaTotalRow = {
   especialidad_id?: number;
 };
 
+type PacienteLookupRow = {
+  COD_SOC: number | string;
+  ADHERENTE_CODIGO: number | string;
+  ADHERENTE_NOMBRE: string | null;
+  APELLIDOS: string | null;
+  VINCULO: string | null;
+  DNI_ADHERENTE: string | null;
+  FECHA_NACIMIENTO: string | Date | null;
+  DES_CAT: string | null;
+};
+
+const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
+const tableColumnsCache = new Map<string, { expiresAt: number; columns: string[] }>();
+
 function parseIntParam(value: string | null, allowZero = false) {
   const parsed = Number(value ?? "");
   if (!Number.isInteger(parsed)) return null;
@@ -52,18 +67,30 @@ function normalizeCategoria(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-async function resolveColumnByAliases(
-  pool: sql.ConnectionPool,
-  tableName: string,
-  aliases: string[]
-) {
+async function getTableColumns(pool: sql.ConnectionPool, tableName: string) {
+  const cacheKey = tableName.toLowerCase();
+  const now = Date.now();
+  const cached = tableColumnsCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.columns;
+  }
+
   const result = await pool.request().input("table_name", sql.VarChar(128), tableName).query(`
-    SELECT COLUMN_NAME
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_NAME = @table_name
-  `);
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_NAME = @table_name
+    `);
 
   const columns = (result.recordset as Array<{ COLUMN_NAME: string }>).map((row) => row.COLUMN_NAME);
+  tableColumnsCache.set(cacheKey, {
+    expiresAt: now + TABLE_COLUMNS_TTL_MS,
+    columns,
+  });
+  return columns;
+}
+
+async function resolveColumnByAliases(pool: sql.ConnectionPool, tableName: string, aliases: string[]) {
+  const columns = await getTableColumns(pool, tableName);
   for (const alias of aliases) {
     const found = columns.find((column) => column.toLowerCase() === alias.toLowerCase());
     if (found) return found;
@@ -89,29 +116,46 @@ export async function GET(request: Request) {
     const pool = await getSqlConnectionPfc();
     const sociosPool = await getSqlConnection();
 
-    const categoriaResult = await sociosPool
+    const pacienteResult = await sociosPool
       .request()
       .input("cod_soc", sql.Int, codSoc)
       .input("adherente_codigo", sql.Int, adherenteCodigo)
       .query(`
-        SELECT TOP 1 DES_CAT
+        SELECT TOP 1
+          COD_SOC,
+          ADHERENTE_CODIGO,
+          ADHERENTE_NOMBRE,
+          APELLIDOS,
+          VINCULO,
+          DNI_ADHERENTE,
+          FECHA_NACIMIENTO,
+          DES_CAT
         FROM PR_DORM.dbo.vw_socios_adherentes
         WHERE COD_SOC = @cod_soc
           AND ADHERENTE_CODIGO = @adherente_codigo
       `);
-
-    let categoriaPaciente = String(categoriaResult.recordset[0]?.DES_CAT ?? "").trim();
-    if (!categoriaPaciente && adherenteCodigo === 0) {
+    let pacienteRow = (pacienteResult.recordset[0] as PacienteLookupRow | undefined) ?? null;
+    let categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
+    if (!pacienteRow && adherenteCodigo === 0) {
       const titularFallback = await sociosPool
         .request()
         .input("cod_soc", sql.Int, codSoc)
         .query(`
-          SELECT TOP 1 DES_CAT
+          SELECT TOP 1
+            COD_SOC,
+            ADHERENTE_CODIGO,
+            ADHERENTE_NOMBRE,
+            APELLIDOS,
+            VINCULO,
+            DNI_ADHERENTE,
+            FECHA_NACIMIENTO,
+            DES_CAT
           FROM PR_DORM.dbo.vw_socios_adherentes
           WHERE COD_SOC = @cod_soc
             AND VINCULO = 'TITULAR'
         `);
-      categoriaPaciente = String(titularFallback.recordset[0]?.DES_CAT ?? "").trim();
+      pacienteRow = (titularFallback.recordset[0] as PacienteLookupRow | undefined) ?? null;
+      categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
     }
     const categoriaNormalized = normalizeCategoria(categoriaPaciente);
 
@@ -268,6 +312,16 @@ export async function GET(request: Request) {
         cobertura,
         cobertura_total: coberturaTotal,
         categoria: categoriaPaciente || null,
+        paciente: pacienteRow
+          ? {
+              codSoc: String(pacienteRow.COD_SOC ?? codSoc),
+              adherenteCodigo: String(pacienteRow.ADHERENTE_CODIGO ?? adherenteCodigo),
+              nombre: String(pacienteRow.ADHERENTE_NOMBRE || pacienteRow.APELLIDOS || "No registrado"),
+              vinculo: String(pacienteRow.VINCULO || "No registrado"),
+              dni: String(pacienteRow.DNI_ADHERENTE || "No registrado"),
+              edad: calcularEdad(pacienteRow.FECHA_NACIMIENTO),
+            }
+          : null,
         resumen,
       },
     });

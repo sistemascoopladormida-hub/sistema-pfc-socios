@@ -49,6 +49,14 @@ type HistorialCompletoResponse = {
     historial: HistorialItem[];
     cobertura: CoberturaItem[];
     categoria: string | null;
+    paciente?: {
+      codSoc: string;
+      adherenteCodigo: string;
+      nombre: string;
+      vinculo: string;
+      dni: string;
+      edad: number | null;
+    } | null;
     resumen: {
       total_turnos: number;
       atendidos: number;
@@ -57,17 +65,6 @@ type HistorialCompletoResponse = {
     };
   };
   error?: string;
-};
-
-type GrupoSocioRow = {
-  COD_SOC: number | string;
-  ADHERENTE_CODIGO: number | string;
-  ADHERENTE_NOMBRE: string;
-  APELLIDOS: string;
-  VINCULO: string;
-  DNI_ADHERENTE: string;
-  FECHA_NACIMIENTO?: string;
-  EDAD?: number | null;
 };
 
 type PacienteInfo = {
@@ -181,38 +178,19 @@ export default function HistorialSocioPage() {
           throw new Error(data.error ?? "No se pudo cargar historial");
         }
 
-        const pacienteResponse = await fetch(`/api/socios/${encodeURIComponent(String(codSoc))}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const pacienteData = (await pacienteResponse.json()) as {
-          success: boolean;
-          data?: GrupoSocioRow[];
-          error?: string;
-        };
-        if (!pacienteResponse.ok || !pacienteData.success) {
-          throw new Error(pacienteData.error ?? "No se pudo cargar la información del paciente");
-        }
-
-        const grupo = pacienteData.data ?? [];
-        const actual =
-          grupo.find((item) => Number(item.ADHERENTE_CODIGO) === adherente) ??
-          grupo.find((item) => Number(item.ADHERENTE_CODIGO) === 0) ??
-          null;
-
         setHistorial(data.data.historial ?? []);
         setCobertura(data.data.cobertura ?? []);
         setCategoria(data.data.categoria ?? "");
         setPaciente(
-          actual
+          data.data.paciente
             ? {
-                codSoc: String(actual.COD_SOC ?? codSoc),
-                adherenteCodigo: String(actual.ADHERENTE_CODIGO ?? adherente),
-                nombre: String(actual.ADHERENTE_NOMBRE || actual.APELLIDOS || "No registrado"),
-                vinculo: String(actual.VINCULO || "No registrado"),
-                dni: String(actual.DNI_ADHERENTE || "No registrado"),
-                edad: Number.isFinite(Number(actual.EDAD))
-                  ? `${Number(actual.EDAD)} años`
+                codSoc: String(data.data.paciente.codSoc ?? codSoc),
+                adherenteCodigo: String(data.data.paciente.adherenteCodigo ?? adherente),
+                nombre: String(data.data.paciente.nombre || "No registrado"),
+                vinculo: String(data.data.paciente.vinculo || "No registrado"),
+                dni: String(data.data.paciente.dni || "No registrado"),
+                edad: Number.isFinite(Number(data.data.paciente.edad))
+                  ? `${Number(data.data.paciente.edad)} años`
                   : "Sin dato",
               }
             : null

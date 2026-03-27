@@ -10,6 +10,20 @@ type Params = {
   };
 };
 
+type SocioGrupoRow = {
+  COD_SOC: number | string;
+  APELLIDOS: string;
+  ADHERENTE_CODIGO: number | string;
+  ADHERENTE_NOMBRE: string;
+  VINCULO: string;
+  DNI_ADHERENTE: string;
+  DES_CAT: string;
+  FECHA_NACIMIENTO: string | Date | null;
+};
+
+const SOCIO_GRUPO_CACHE_TTL_MS = 30_000;
+const grupoCache = new Map<number, { expiresAt: number; data: unknown[] }>();
+
 export async function GET(_: Request, { params }: Params) {
   try {
     const codSoc = Number(params.cod_soc);
@@ -17,6 +31,15 @@ export async function GET(_: Request, { params }: Params) {
       return NextResponse.json({
         success: false,
         error: "cod_soc invalido",
+      });
+    }
+
+    const now = Date.now();
+    const cached = grupoCache.get(codSoc);
+    if (cached && cached.expiresAt > now) {
+      return NextResponse.json({
+        success: true,
+        data: cached.data,
       });
     }
 
@@ -38,7 +61,7 @@ export async function GET(_: Request, { params }: Params) {
         ADHERENTE_NOMBRE
     `);
 
-    const data = result.recordset.map((row) => {
+    const data = (result.recordset as SocioGrupoRow[]).map((row) => {
       const edad = calcularEdad(row.FECHA_NACIMIENTO);
       const esHijo = esVinculoHijo(row.VINCULO);
       const beneficio = resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO);
@@ -50,6 +73,11 @@ export async function GET(_: Request, { params }: Params) {
         REQUIERE_CUOTA_PROPIA: beneficio === "PROPIO",
         TIPO_BENEFICIO: beneficio,
       };
+    });
+
+    grupoCache.set(codSoc, {
+      expiresAt: now + SOCIO_GRUPO_CACHE_TTL_MS,
+      data,
     });
 
     return NextResponse.json({

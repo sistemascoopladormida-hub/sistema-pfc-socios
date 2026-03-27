@@ -73,6 +73,7 @@ function getBeneficioLabel(row: SocioListadoRow) {
 export function SociosPageClient() {
   const { role } = useUser();
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [socios, setSocios] = useState<SocioListadoRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -83,6 +84,16 @@ export function SociosPageClient() {
   const [grupoCodSoc, setGrupoCodSoc] = useState<string>("");
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  useEffect(() => {
     const abortController = new AbortController();
 
     async function loadSocios() {
@@ -90,11 +101,14 @@ export function SociosPageClient() {
         setIsLoading(true);
         setLoadError(null);
 
-        const response = await fetch(`/api/socios?buscar=${encodeURIComponent(query.trim())}`, {
-          method: "GET",
-          signal: abortController.signal,
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/socios?buscar=${encodeURIComponent(debouncedQuery)}&limit=2500`,
+          {
+            method: "GET",
+            signal: abortController.signal,
+            cache: "no-store",
+          }
+        );
 
         const data = (await response.json()) as ApiResponse;
 
@@ -116,7 +130,7 @@ export function SociosPageClient() {
     return () => {
       abortController.abort();
     };
-  }, [query]);
+  }, [debouncedQuery]);
 
   const sociosFiltrados = useMemo(() => socios, [socios]);
   const resumenBeneficios = useMemo(() => {

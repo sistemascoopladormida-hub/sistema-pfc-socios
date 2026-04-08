@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
+import { resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type CrearTurnoBody = {
@@ -51,6 +52,14 @@ type SocioLookupRow = {
   ADHERENTE_CODIGO: number;
   ADHERENTE_NOMBRE: string;
   APELLIDOS: string;
+};
+
+type SocioBeneficioRow = {
+  COD_SOC: number | string;
+  ADHERENTE_CODIGO: number | string;
+  VINCULO: string | null;
+  FECHA_NACIMIENTO: string | Date | null;
+  DES_CAT: string | null;
 };
 
 const ESTADOS_OCUPADOS = ["RESERVADO", "ATENDIDO"] as const;
@@ -117,6 +126,39 @@ function categoriaPlanLabel(value: string) {
   if (normalized.includes("BASICA")) return "Plan Básico";
   if (normalized.includes("PLUS")) return "Plan Plus";
   return value;
+}
+
+function buildInList(values: number[]) {
+  const uniques = [...new Set(values.filter((value) => Number.isInteger(value) && value >= 0))];
+  if (uniques.length === 0) return "NULL";
+  return uniques.join(", ");
+}
+
+function buildCoverageScopeWhere(
+  tipoBeneficio: "PROPIO" | "TITULAR" | "NO_DEFINIDO",
+  coberturaScopeColumn: string | null,
+  sharedAdherentesSql: string
+) {
+  const byCodigo = "t.cod_soc = @cod_soc AND t.adherente_codigo = @adherente_codigo";
+  const byShared = `t.cod_soc = @cod_soc AND t.adherente_codigo IN (${sharedAdherentesSql})`;
+
+  if (!coberturaScopeColumn) {
+    return tipoBeneficio === "PROPIO" ? byCodigo : byShared;
+  }
+
+  if (tipoBeneficio === "PROPIO") {
+    return `t.cod_soc = @cod_soc
+      AND (
+        (${coberturaScopeColumn} = 'INDIVIDUAL' AND t.adherente_codigo = @adherente_codigo)
+        OR (${coberturaScopeColumn} IS NULL AND t.adherente_codigo = @adherente_codigo)
+      )`;
+  }
+
+  return `t.cod_soc = @cod_soc
+    AND (
+      (${coberturaScopeColumn} = 'COMPARTIDA')
+      OR (${coberturaScopeColumn} IS NULL AND t.adherente_codigo IN (${sharedAdherentesSql}))
+    )`;
 }
 
 async function resolveCupoColumn(pool: sql.ConnectionPool): Promise<CupoColumnName | null> {
@@ -365,6 +407,10 @@ export async function POST(request: Request) {
       "prestacion",
       "idprestacion",
     ]);
+    const tipoBeneficioColumn = await resolveColumnByAliases(pool, "turnos", [
+      "tipo_beneficio_al_momento",
+    ]);
+    const coberturaScopeColumn = await resolveColumnByAliases(pool, "turnos", ["cobertura_scope"]);
     if (!turnosPrestacionColumn) {
       return NextResponse.json({
         success: false,
@@ -373,29 +419,41 @@ export async function POST(request: Request) {
       });
     }
 
-    const categoriaResult = await sociosPool
+    const perfilResult = await sociosPool
       .request()
       .input("cod_soc", sql.Int, payload.codSoc)
       .input("adherente_codigo", sql.Int, payload.adherenteCodigo)
       .query(`
-        SELECT TOP 1 DES_CAT
+        SELECT TOP 1
+          COD_SOC,
+          ADHERENTE_CODIGO,
+          VINCULO,
+          FECHA_NACIMIENTO,
+          DES_CAT
         FROM PR_DORM.dbo.vw_socios_adherentes
         WHERE COD_SOC = @cod_soc
           AND ADHERENTE_CODIGO = @adherente_codigo
       `);
 
-    let categoriaPaciente = String(categoriaResult.recordset[0]?.DES_CAT ?? "").trim();
-    if (!categoriaPaciente && payload.adherenteCodigo === 0) {
+    let perfilPaciente = (perfilResult.recordset[0] as SocioBeneficioRow | undefined) ?? null;
+    let categoriaPaciente = String(perfilPaciente?.DES_CAT ?? "").trim();
+    if (!perfilPaciente && payload.adherenteCodigo === 0) {
       const titularFallback = await sociosPool
         .request()
         .input("cod_soc", sql.Int, payload.codSoc)
         .query(`
-          SELECT TOP 1 DES_CAT
+          SELECT TOP 1
+            COD_SOC,
+            ADHERENTE_CODIGO,
+            VINCULO,
+            FECHA_NACIMIENTO,
+            DES_CAT
           FROM PR_DORM.dbo.vw_socios_adherentes
           WHERE COD_SOC = @cod_soc
             AND VINCULO = 'TITULAR'
         `);
-      categoriaPaciente = String(titularFallback.recordset[0]?.DES_CAT ?? "").trim();
+      perfilPaciente = (titularFallback.recordset[0] as SocioBeneficioRow | undefined) ?? null;
+      categoriaPaciente = String(perfilPaciente?.DES_CAT ?? "").trim();
     }
 
     if (!categoriaPaciente) {
@@ -404,6 +462,36 @@ export async function POST(request: Request) {
         error: "No se pudo determinar la categoría del paciente para validar cobertura",
       });
     }
+
+    const tipoBeneficio = resolverBeneficio(
+      perfilPaciente?.VINCULO ?? "TITULAR",
+      perfilPaciente?.FECHA_NACIMIENTO
+    );
+
+    const grupoResult = await sociosPool.request().input("cod_soc", sql.Int, payload.codSoc).query(`
+      SELECT
+        COD_SOC,
+        ADHERENTE_CODIGO,
+        VINCULO,
+        FECHA_NACIMIENTO,
+        DES_CAT
+      FROM PR_DORM.dbo.vw_socios_adherentes
+      WHERE COD_SOC = @cod_soc
+    `);
+    const grupoRows = grupoResult.recordset as SocioBeneficioRow[];
+    const adherentesConBeneficioTitular = grupoRows
+      .filter(
+        (row) => resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO) === "TITULAR"
+      )
+      .map((row) => Number(row.ADHERENTE_CODIGO))
+      .filter((value) => Number.isInteger(value) && value >= 0);
+
+    const scopeWhere = buildCoverageScopeWhere(
+      tipoBeneficio,
+      coberturaScopeColumn,
+      buildInList(adherentesConBeneficioTitular)
+    );
+    const coberturaScopeValue = tipoBeneficio === "PROPIO" ? "INDIVIDUAL" : "COMPARTIDA";
 
     const diaSemana = obtenerDiaSemana(payload.fecha);
     const diaSemanaTexto = dayToSpanish(diaSemana);
@@ -556,13 +644,11 @@ export async function POST(request: Request) {
       .input("prestacion", sql.Int, payload.prestacionId)
       .query(`
         SELECT COUNT(*) as usadas
-        FROM historial_atencion h
-        JOIN turnos t ON t.id = h.turno_id
-        WHERE t.cod_soc = @cod_soc
-          AND t.adherente_codigo = @adherente_codigo
+        FROM turnos t
+        WHERE ${scopeWhere}
           AND t.${turnosPrestacionColumn} = @prestacion
-          AND (h.estado = 'ATENDIDO' OR (h.estado = 'CARGA_MANUAL' AND t.estado = 'ATENDIDO'))
-          AND YEAR(h.fecha) = YEAR(GETDATE())
+          AND t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
       `);
 
     const usadasPrestacion = Number(coberturaUsadaResult.recordset[0]?.usadas ?? 0);
@@ -600,13 +686,11 @@ export async function POST(request: Request) {
       .input("especialidad_id", sql.Int, payload.especialidadId)
       .query(`
         SELECT COUNT(*) as usadas
-        FROM historial_atencion h
-        JOIN turnos t ON t.id = h.turno_id
-        WHERE t.cod_soc = @cod_soc
-          AND t.adherente_codigo = @adherente_codigo
+        FROM turnos t
+        WHERE ${scopeWhere}
           AND t.especialidad_id = @especialidad_id
-          AND (h.estado = 'ATENDIDO' OR (h.estado = 'CARGA_MANUAL' AND t.estado = 'ATENDIDO'))
-          AND YEAR(h.fecha) = YEAR(GETDATE())
+          AND t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
       `);
 
     const usadasTotal = Number(coberturaTotalUsadaResult.recordset[0]?.usadas ?? 0);
@@ -649,6 +733,8 @@ export async function POST(request: Request) {
       .input("categoria", sql.VarChar(120), categoriaPaciente)
       .input("fecha", sql.Date, payload.fecha)
       .input("hora", sql.VarChar(5), payload.hora)
+      .input("tipo_beneficio_al_momento", sql.VarChar(20), tipoBeneficio)
+      .input("cobertura_scope", sql.VarChar(20), coberturaScopeValue)
       .input("observaciones", sql.VarChar(sql.MAX), payload.observaciones)
       .query(`
         INSERT INTO turnos
@@ -664,6 +750,8 @@ export async function POST(request: Request) {
           estado,
           observaciones,
           creado_en
+          ${tipoBeneficioColumn ? `, ${tipoBeneficioColumn}` : ""}
+          ${coberturaScopeColumn ? `, ${coberturaScopeColumn}` : ""}
         )
         OUTPUT INSERTED.id as turno_id
         VALUES
@@ -679,6 +767,8 @@ export async function POST(request: Request) {
           'RESERVADO',
           @observaciones,
           GETDATE()
+          ${tipoBeneficioColumn ? ", @tipo_beneficio_al_momento" : ""}
+          ${coberturaScopeColumn ? ", @cobertura_scope" : ""}
         )
       `);
 

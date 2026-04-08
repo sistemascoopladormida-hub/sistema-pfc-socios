@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
+import { resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type EstadoManual = "ATENDIDO" | "AUSENTE" | "CANCELADO";
@@ -49,7 +50,32 @@ function isFutureDate(fecha: string) {
   return sessionDate.getTime() > today.getTime();
 }
 
-async function getCategoriaPaciente(codSoc: number, adherenteCodigo: number) {
+type PacienteContext = {
+  categoria: string;
+  tipoBeneficio: "PROPIO" | "TITULAR" | "NO_DEFINIDO";
+  coberturaScope: "INDIVIDUAL" | "COMPARTIDA";
+};
+
+async function resolveColumnByAliases(
+  pool: sql.ConnectionPool,
+  tableName: string,
+  aliases: string[]
+): Promise<string | null> {
+  const result = await pool.request().input("table_name", sql.VarChar(128), tableName).query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = @table_name
+  `);
+
+  const rows = result.recordset as Array<{ COLUMN_NAME: string }>;
+  for (const alias of aliases) {
+    const found = rows.find((row) => row.COLUMN_NAME.toLowerCase() === alias.toLowerCase());
+    if (found) return found.COLUMN_NAME;
+  }
+  return null;
+}
+
+async function getPacienteContext(codSoc: number, adherenteCodigo: number): Promise<PacienteContext> {
   const sociosPool = await getSqlConnection();
 
   const result = await sociosPool
@@ -57,25 +83,40 @@ async function getCategoriaPaciente(codSoc: number, adherenteCodigo: number) {
     .input("cod_soc", sql.Int, codSoc)
     .input("adherente_codigo", sql.Int, adherenteCodigo)
     .query(`
-      SELECT TOP 1 DES_CAT
+      SELECT TOP 1
+        DES_CAT,
+        VINCULO,
+        FECHA_NACIMIENTO
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
         AND ADHERENTE_CODIGO = @adherente_codigo
     `);
 
   let categoria = normalizeText(result.recordset[0]?.DES_CAT);
+  let vinculo = result.recordset[0]?.VINCULO;
+  let fechaNacimiento = result.recordset[0]?.FECHA_NACIMIENTO;
 
   if (!categoria && adherenteCodigo === 0) {
     const fallback = await sociosPool.request().input("cod_soc", sql.Int, codSoc).query(`
-      SELECT TOP 1 DES_CAT
+      SELECT TOP 1
+        DES_CAT,
+        VINCULO,
+        FECHA_NACIMIENTO
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
         AND VINCULO = 'TITULAR'
     `);
     categoria = normalizeText(fallback.recordset[0]?.DES_CAT);
+    vinculo = fallback.recordset[0]?.VINCULO;
+    fechaNacimiento = fallback.recordset[0]?.FECHA_NACIMIENTO;
   }
 
-  return categoria;
+  const tipoBeneficio = resolverBeneficio(vinculo, fechaNacimiento);
+  return {
+    categoria: categoria || "SIN_CATEGORIA",
+    tipoBeneficio,
+    coberturaScope: tipoBeneficio === "PROPIO" ? "INDIVIDUAL" : "COMPARTIDA",
+  };
 }
 
 export async function POST(request: Request) {
@@ -189,7 +230,15 @@ export async function POST(request: Request) {
       });
     }
 
-    const categoriaPaciente = (await getCategoriaPaciente(codSoc, adherenteCodigo)) || "SIN_CATEGORIA";
+    const turnosTipoBeneficioColumn = await resolveColumnByAliases(pool, "turnos", [
+      "tipo_beneficio_al_momento",
+    ]);
+    const turnosCoberturaScopeColumn = await resolveColumnByAliases(pool, "turnos", [
+      "cobertura_scope",
+    ]);
+
+    const pacienteContext = await getPacienteContext(codSoc, adherenteCodigo);
+    const categoriaPaciente = pacienteContext.categoria;
 
     await transaction.begin();
     transactionStarted = true;
@@ -204,6 +253,12 @@ export async function POST(request: Request) {
       .input("fecha", sql.Date, fecha)
       .input("hora", sql.VarChar(8), horaConSegundos)
       .input("estado", sql.VarChar(20), estado)
+      .input(
+        "tipo_beneficio_al_momento",
+        sql.VarChar(20),
+        pacienteContext.tipoBeneficio
+      )
+      .input("cobertura_scope", sql.VarChar(20), pacienteContext.coberturaScope)
       .input("observaciones", sql.VarChar(sql.MAX), observacion || "Carga manual de sesión")
       .query(`
         INSERT INTO turnos
@@ -220,6 +275,8 @@ export async function POST(request: Request) {
           observaciones,
           creado_en,
           es_carga_manual
+          ${turnosTipoBeneficioColumn ? `, ${turnosTipoBeneficioColumn}` : ""}
+          ${turnosCoberturaScopeColumn ? `, ${turnosCoberturaScopeColumn}` : ""}
         )
         OUTPUT INSERTED.id as turno_id
         VALUES
@@ -236,6 +293,8 @@ export async function POST(request: Request) {
           @observaciones,
           GETDATE(),
           1
+          ${turnosTipoBeneficioColumn ? ", @tipo_beneficio_al_momento" : ""}
+          ${turnosCoberturaScopeColumn ? ", @cobertura_scope" : ""}
         )
       `);
 

@@ -56,6 +56,7 @@ type HistorialCompletoResponse = {
       vinculo: string;
       dni: string;
       edad: number | null;
+      tipoBeneficio?: "PROPIO" | "TITULAR" | "NO_DEFINIDO" | string;
     } | null;
     resumen: {
       total_turnos: number;
@@ -81,8 +82,35 @@ function toFecha(value: string | Date) {
 }
 
 function toHora(value: string | Date) {
-  if (typeof value === "string") return value.slice(0, 5);
-  return value.toISOString().slice(11, 16);
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "Sin hora";
+    return value.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "UTC",
+    });
+  }
+
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Sin hora";
+
+  const hhmmMatch = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (hhmmMatch) {
+    return `${hhmmMatch[1]}:${hhmmMatch[2]}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "UTC",
+    });
+  }
+
+  return "Sin hora";
 }
 
 function progressColor(percent: number) {
@@ -394,7 +422,7 @@ export default function HistorialSocioPage() {
                   <TableHead>Prestacion</TableHead>
                   <TableHead>Profesional</TableHead>
                   <TableHead>Estado turno</TableHead>
-                  <TableHead>Estado atencion</TableHead>
+                  {/* <TableHead>Estado atencion</TableHead> */}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -417,13 +445,13 @@ export default function HistorialSocioPage() {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    {/* <TableCell>
                       {item.estado_atencion ? (
                         <Badge className={estadoClass(item.estado_atencion)}>{item.estado_atencion}</Badge>
                       ) : (
                         <span className="text-xs text-slate-500">Sin registro</span>
                       )}
-                    </TableCell>
+                    </TableCell> */}
                   </TableRow>
                 ))}
               </TableBody>

@@ -1,7 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { calcularEdad } from "@/lib/adherentes-beneficios";
+import { calcularEdad, resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type HistorialRow = {
@@ -67,6 +67,39 @@ function normalizeCategoria(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function buildInList(values: number[]) {
+  const uniques = [...new Set(values.filter((value) => Number.isInteger(value) && value >= 0))];
+  if (uniques.length === 0) return "NULL";
+  return uniques.join(", ");
+}
+
+function buildCoverageScopeWhere(
+  tipoBeneficio: "PROPIO" | "TITULAR" | "NO_DEFINIDO",
+  coberturaScopeColumn: string | null,
+  sharedAdherentesSql: string
+) {
+  const byCodigo = "t.cod_soc = @cod_soc AND t.adherente_codigo = @adherente_codigo";
+  const byShared = `t.cod_soc = @cod_soc AND t.adherente_codigo IN (${sharedAdherentesSql})`;
+
+  if (!coberturaScopeColumn) {
+    return tipoBeneficio === "PROPIO" ? byCodigo : byShared;
+  }
+
+  if (tipoBeneficio === "PROPIO") {
+    return `t.cod_soc = @cod_soc
+      AND (
+        (${coberturaScopeColumn} = 'INDIVIDUAL' AND t.adherente_codigo = @adherente_codigo)
+        OR (${coberturaScopeColumn} IS NULL AND t.adherente_codigo = @adherente_codigo)
+      )`;
+  }
+
+  return `t.cod_soc = @cod_soc
+    AND (
+      (${coberturaScopeColumn} = 'COMPARTIDA')
+      OR (${coberturaScopeColumn} IS NULL AND t.adherente_codigo IN (${sharedAdherentesSql}))
+    )`;
+}
+
 async function getTableColumns(pool: sql.ConnectionPool, tableName: string) {
   const cacheKey = tableName.toLowerCase();
   const now = Date.now();
@@ -116,46 +149,70 @@ export async function GET(request: Request) {
     const pool = await getSqlConnectionPfc();
     const sociosPool = await getSqlConnection();
 
-    const pacienteResult = await sociosPool
-      .request()
-      .input("cod_soc", sql.Int, codSoc)
-      .input("adherente_codigo", sql.Int, adherenteCodigo)
-      .query(`
-        SELECT TOP 1
-          COD_SOC,
-          ADHERENTE_CODIGO,
-          ADHERENTE_NOMBRE,
-          APELLIDOS,
-          VINCULO,
-          DNI_ADHERENTE,
-          FECHA_NACIMIENTO,
-          DES_CAT
-        FROM PR_DORM.dbo.vw_socios_adherentes
-        WHERE COD_SOC = @cod_soc
-          AND ADHERENTE_CODIGO = @adherente_codigo
-      `);
-    let pacienteRow = (pacienteResult.recordset[0] as PacienteLookupRow | undefined) ?? null;
+    const grupoResult = await sociosPool.request().input("cod_soc", sql.Int, codSoc).query(`
+      SELECT
+        COD_SOC,
+        ADHERENTE_CODIGO,
+        ADHERENTE_NOMBRE,
+        APELLIDOS,
+        VINCULO,
+        DNI_ADHERENTE,
+        FECHA_NACIMIENTO,
+        DES_CAT
+      FROM PR_DORM.dbo.vw_socios_adherentes
+      WHERE COD_SOC = @cod_soc
+    `);
+    const grupoRows = grupoResult.recordset as PacienteLookupRow[];
+    const pacienteResult = grupoRows.find(
+      (row) => Number(row.ADHERENTE_CODIGO) === adherenteCodigo
+    );
+    let pacienteRow = pacienteResult ?? null;
     let categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
     if (!pacienteRow && adherenteCodigo === 0) {
-      const titularFallback = await sociosPool
+      pacienteRow =
+        grupoRows.find((row) => String(row.VINCULO ?? "").trim().toUpperCase() === "TITULAR") ?? null;
+      categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
+    }
+
+    const tipoBeneficio = resolverBeneficio(
+      pacienteRow?.VINCULO ?? "TITULAR",
+      pacienteRow?.FECHA_NACIMIENTO
+    );
+    const adherentesConBeneficioTitular = grupoRows
+      .filter((row) => resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO) === "TITULAR")
+      .map((row) => Number(row.ADHERENTE_CODIGO))
+      .filter((value) => Number.isInteger(value) && value >= 0);
+    const turnosCoberturaScopeColumn = await resolveColumnByAliases(pool, "turnos", [
+      "cobertura_scope",
+    ]);
+    const consumoScopeWhere = buildCoverageScopeWhere(
+      tipoBeneficio,
+      turnosCoberturaScopeColumn,
+      buildInList(adherentesConBeneficioTitular)
+    );
+
+    if (!categoriaPaciente && pacienteRow) {
+      categoriaPaciente = String(pacienteRow.DES_CAT ?? "").trim();
+    }
+    if (!categoriaPaciente && adherenteCodigo === 0) {
+      categoriaPaciente = String(
+        grupoRows.find((row) => String(row.VINCULO ?? "").trim().toUpperCase() === "TITULAR")?.DES_CAT ??
+          ""
+      ).trim();
+    }
+
+    if (!categoriaPaciente) {
+      const categoriaLookup = await sociosPool
         .request()
         .input("cod_soc", sql.Int, codSoc)
+        .input("adherente_codigo", sql.Int, adherenteCodigo)
         .query(`
-          SELECT TOP 1
-            COD_SOC,
-            ADHERENTE_CODIGO,
-            ADHERENTE_NOMBRE,
-            APELLIDOS,
-            VINCULO,
-            DNI_ADHERENTE,
-            FECHA_NACIMIENTO,
-            DES_CAT
+          SELECT TOP 1 DES_CAT
           FROM PR_DORM.dbo.vw_socios_adherentes
           WHERE COD_SOC = @cod_soc
-            AND VINCULO = 'TITULAR'
+            AND ADHERENTE_CODIGO = @adherente_codigo
         `);
-      pacienteRow = (titularFallback.recordset[0] as PacienteLookupRow | undefined) ?? null;
-      categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
+      categoriaPaciente = String(categoriaLookup.recordset[0]?.DES_CAT ?? "").trim();
     }
     const categoriaNormalized = normalizeCategoria(categoriaPaciente);
 
@@ -254,12 +311,11 @@ export async function GET(request: Request) {
           SELECT
             t.prestacion_id,
             COUNT(*) as utilizadas
-          FROM historial_atencion h
-          JOIN turnos t ON t.id = h.turno_id
+          FROM turnos t
           WHERE
-            t.cod_soc = @cod_soc
-            AND t.adherente_codigo = @adherente_codigo
-            AND (h.estado = 'ATENDIDO' OR (h.estado = 'CARGA_MANUAL' AND t.estado = 'ATENDIDO'))
+            ${consumoScopeWhere}
+            AND t.estado = 'ATENDIDO'
+            AND YEAR(t.fecha) = YEAR(GETDATE())
           GROUP BY t.prestacion_id
         `),
     ]);
@@ -320,6 +376,7 @@ export async function GET(request: Request) {
               vinculo: String(pacienteRow.VINCULO || "No registrado"),
               dni: String(pacienteRow.DNI_ADHERENTE || "No registrado"),
               edad: calcularEdad(pacienteRow.FECHA_NACIMIENTO),
+              tipoBeneficio,
             }
           : null,
         resumen,

@@ -27,31 +27,58 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
-import { consumoSocios, prestacionesUso } from "@/data/reportes";
 
 const PIE_COLORS = ["#138A3D", "#3A5DAE", "#F1872D", "#6C4AA1"];
 
-const estadisticasGenerales = [
-  { prestacion: "Fisioterapia", sesiones: 32, promedioMensual: "8 / semana", estado: "Activo" },
-  { prestacion: "Psicologia", sesiones: 21, promedioMensual: "5 / semana", estado: "Activo" },
-  { prestacion: "Nutricion", sesiones: 14, promedioMensual: "3 / semana", estado: "Activo" },
-  { prestacion: "Ginecologia", sesiones: 9, promedioMensual: "2 / semana", estado: "Activo" },
-];
+type ReportesResponse = {
+  success: boolean;
+  data?: {
+    indicadores: {
+      prestaciones_totales_mes: number;
+      socios_que_usaron_pfc: number;
+      promedio_uso_por_socio: number;
+    };
+    prestaciones_uso: Array<{ nombre: string; sesiones: number }>;
+    consumo_socios: Array<{ socio: string; sesiones: number }>;
+    estadisticas: Array<{
+      prestacion: string;
+      sesiones: number;
+      promedioMensual: string;
+      estado: string;
+    }>;
+  };
+  error?: string;
+};
 
 export default function ReportesPage() {
   const { role } = useUser();
-  const [mounted, setMounted] = useState(false);
+  const [reportes, setReportes] = useState<NonNullable<ReportesResponse["data"]> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    const timer = setTimeout(() => setIsLoading(false), 600);
-    return () => clearTimeout(timer);
-  }, []);
+    async function fetchReportes() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await fetch("/api/reportes", {
+          method: "GET",
+          cache: "no-store",
+        });
+        const data = (await response.json()) as ReportesResponse;
+        if (!response.ok || !data.success || !data.data) {
+          throw new Error(data.error ?? "No se pudieron cargar reportes");
+        }
+        setReportes(data.data);
+      } catch (fetchError) {
+        setError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar reportes");
+      } finally {
+        setIsLoading(false);
+      }
+    }
 
-  const prestacionesTotalesMes = prestacionesUso.reduce((acc, item) => acc + item.sesiones, 0);
-  const sociosQueUsaronPfc = consumoSocios.length;
-  const promedioUsoSocio = (prestacionesTotalesMes / sociosQueUsaronPfc).toFixed(1);
+    fetchReportes();
+  }, []);
 
   if (!canAccessModule(role, "reportes")) {
     return (
@@ -70,6 +97,32 @@ export default function ReportesPage() {
     return <Loading label="Cargando reportes del sistema..." />;
   }
 
+  if (error) {
+    return (
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Error al cargar reportes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-red-600">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!reportes) {
+    return (
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Sin datos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600">No se recibieron datos de reportes.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -85,7 +138,9 @@ export default function ReportesPage() {
             <CardTitle className="text-sm text-slate-600">Prestaciones totales del mes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{prestacionesTotalesMes}</p>
+            <p className="text-3xl font-bold text-slate-900">
+              {reportes.indicadores.prestaciones_totales_mes}
+            </p>
           </CardContent>
         </Card>
 
@@ -96,7 +151,9 @@ export default function ReportesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{sociosQueUsaronPfc}</p>
+            <p className="text-3xl font-bold text-slate-900">
+              {reportes.indicadores.socios_que_usaron_pfc}
+            </p>
           </CardContent>
         </Card>
 
@@ -105,7 +162,9 @@ export default function ReportesPage() {
             <CardTitle className="text-sm text-slate-600">Promedio de uso por socio</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{promedioUsoSocio}</p>
+            <p className="text-3xl font-bold text-slate-900">
+              {reportes.indicadores.promedio_uso_por_socio}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -116,9 +175,9 @@ export default function ReportesPage() {
             <CardTitle>Prestaciones mas utilizadas</CardTitle>
           </CardHeader>
           <CardContent className="h-80">
-            {mounted && prestacionesUso.length > 0 ? (
+            {reportes.prestaciones_uso.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={prestacionesUso} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                <BarChart data={reportes.prestaciones_uso} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="nombre" tickLine={false} axisLine={false} />
                   <YAxis tickLine={false} axisLine={false} />
@@ -137,19 +196,19 @@ export default function ReportesPage() {
             <CardTitle>Consumo de prestaciones por socio</CardTitle>
           </CardHeader>
           <CardContent className="h-80">
-            {mounted && consumoSocios.length > 0 ? (
+            {reportes.consumo_socios.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Tooltip />
                   <Pie
-                    data={consumoSocios}
+                    data={reportes.consumo_socios}
                     dataKey="sesiones"
                     nameKey="socio"
                     innerRadius={55}
                     outerRadius={100}
                     paddingAngle={3}
                   >
-                    {consumoSocios.map((entry, index) => (
+                    {reportes.consumo_socios.map((entry, index) => (
                       <Cell
                         key={`${entry.socio}-${index}`}
                         fill={PIE_COLORS[index % PIE_COLORS.length]}
@@ -170,7 +229,7 @@ export default function ReportesPage() {
           <CardTitle>Estadisticas generales</CardTitle>
         </CardHeader>
         <CardContent>
-          {estadisticasGenerales.length === 0 ? (
+          {reportes.estadisticas.length === 0 ? (
             <EmptyState />
           ) : (
             <Table>
@@ -183,7 +242,7 @@ export default function ReportesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {estadisticasGenerales.map((item) => (
+                {reportes.estadisticas.map((item) => (
                   <TableRow key={item.prestacion}>
                     <TableCell>{item.prestacion}</TableCell>
                     <TableCell>{item.sesiones}</TableCell>

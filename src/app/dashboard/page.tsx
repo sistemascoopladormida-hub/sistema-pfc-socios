@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 import { Calendar, HeartPulse, Stethoscope, Users } from "lucide-react";
 import { motion } from "framer-motion";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataBadge } from "@/components/ui/data-badge";
@@ -244,21 +253,19 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Prestaciones mas utilizadas</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="h-80">
             {dashboardData.prestaciones_top.length === 0 ? (
               <EmptyState />
             ) : (
-              <ul className="space-y-3 text-sm text-slate-700">
-                {dashboardData.prestaciones_top.map((item) => (
-                  <li
-                    key={item.nombre}
-                    className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200"
-                  >
-                    <span>{item.nombre}</span>
-                    <span className="font-semibold">{item.total} sesiones</span>
-                  </li>
-                ))}
-              </ul>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dashboardData.prestaciones_top} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="nombre" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  <Bar dataKey="total" fill="#138A3D" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>

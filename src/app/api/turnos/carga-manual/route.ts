@@ -188,8 +188,11 @@ export async function POST(request: Request) {
     const profesionalResult = await pool
       .request()
       .input("id", sql.Int, profesionalId)
-      .query("SELECT TOP 1 id FROM profesionales WHERE id = @id");
-    if (!profesionalResult.recordset[0]) {
+      .query("SELECT TOP 1 id, especialidad_id FROM profesionales WHERE id = @id");
+    const profesional = profesionalResult.recordset[0] as
+      | { id: number; especialidad_id: number }
+      | undefined;
+    if (!profesional) {
       return NextResponse.json({ success: false, error: "El profesional seleccionado no existe" });
     }
 
@@ -202,6 +205,12 @@ export async function POST(request: Request) {
       | undefined;
     if (!prestacion) {
       return NextResponse.json({ success: false, error: "La prestación seleccionada no existe" });
+    }
+    if (Number(prestacion.especialidad_id) !== Number(profesional.especialidad_id)) {
+      return NextResponse.json({
+        success: false,
+        error: "La prestación seleccionada no corresponde a la especialidad del profesional",
+      });
     }
 
     const horaConSegundos = `${hora}:00`;

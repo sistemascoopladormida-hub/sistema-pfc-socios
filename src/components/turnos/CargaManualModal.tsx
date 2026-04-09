@@ -66,21 +66,23 @@ export function CargaManualModal({
 
   const maxFecha = useMemo(() => todayAsInputDate(), []);
   const charsRemaining = 300 - observacion.length;
+  const selectedProfesional = useMemo(
+    () => profesionales.find((item) => item.id === Number(profesionalId)) ?? null,
+    [profesionalId, profesionales]
+  );
 
-  const prestacionesAgrupadas = useMemo(() => {
-    const grouped = new Map<string, PrestacionSimple[]>();
-    for (const item of prestaciones) {
-      const key = item.especialidad_nombre || "Sin especialidad";
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
-      grouped.get(key)?.push(item);
-    }
-    return Array.from(grouped.entries()).map(([especialidad, items]) => ({
-      especialidad,
-      items,
-    }));
-  }, [prestaciones]);
+  const prestacionesFiltradas = useMemo(() => {
+    if (!selectedProfesional) return [];
+    return prestaciones.filter((item) => item.especialidad_id === selectedProfesional.especialidad_id);
+  }, [prestaciones, selectedProfesional]);
+
+  const especialidadNombreSeleccionada = useMemo(() => {
+    if (!selectedProfesional) return "";
+    return (
+      prestaciones.find((item) => item.especialidad_id === selectedProfesional.especialidad_id)
+        ?.especialidad_nombre ?? "Especialidad"
+    );
+  }, [prestaciones, selectedProfesional]);
 
   const isFormValid =
     Boolean(fecha) &&
@@ -99,6 +101,11 @@ export function CargaManualModal({
       try {
         setLoadingData(true);
         setError(null);
+        setFecha("");
+        setHora("");
+        setProfesionalId("");
+        setPrestacionId("");
+        setEstado("ATENDIDO");
         setObservacion("");
 
         const [profRes, presRes] = await Promise.all([
@@ -143,6 +150,10 @@ export function CargaManualModal({
     loadOptions();
     return () => controller.abort();
   }, [isOpen]);
+
+  useEffect(() => {
+    setPrestacionId("");
+  }, [profesionalId]);
 
   async function handleSubmit() {
     if (!isFormValid || saving || loadingData) return;
@@ -237,6 +248,9 @@ export function CargaManualModal({
                 </div>
               ) : (
                 <fieldset className="space-y-3" disabled={saving}>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Paso 1: fecha y hora de la sesión
+                  </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium text-slate-700">Fecha de la sesión</label>
@@ -259,6 +273,9 @@ export function CargaManualModal({
                     </div>
                   </div>
 
+                  <p className="pt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Paso 2: profesional y prestación vinculada
+                  </p>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-slate-700">Profesional</label>
                     <select
@@ -280,21 +297,34 @@ export function CargaManualModal({
                     <select
                       value={prestacionId}
                       onChange={(event) => setPrestacionId(event.target.value)}
+                      disabled={!selectedProfesional}
                       className="h-10 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
                     >
-                      <option value="">Seleccionar prestación</option>
-                      {prestacionesAgrupadas.map((group) => (
-                        <optgroup key={group.especialidad} label={group.especialidad}>
-                          {group.items.map((item) => (
-                            <option key={item.id} value={String(item.id)}>
-                              {item.nombre}
-                            </option>
-                          ))}
-                        </optgroup>
+                      <option value="">
+                        {selectedProfesional
+                          ? "Seleccionar prestación disponible"
+                          : "Primero selecciona un profesional"}
+                      </option>
+                      {prestacionesFiltradas.map((item) => (
+                        <option key={item.id} value={String(item.id)}>
+                          {item.nombre}
+                        </option>
                       ))}
                     </select>
+                    {selectedProfesional ? (
+                      <p className="text-xs text-teal-700">
+                        Especialidad del profesional: <span className="font-semibold">{especialidadNombreSeleccionada}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        La lista de prestaciones se habilita al elegir profesional.
+                      </p>
+                    )}
                   </div>
 
+                  <p className="pt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Paso 3: estado y observaciones
+                  </p>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-slate-700">Estado</label>
                     <select

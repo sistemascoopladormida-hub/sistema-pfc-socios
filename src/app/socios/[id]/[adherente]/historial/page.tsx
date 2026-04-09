@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { PlusCircle } from "lucide-react";
 
 import { CargaManualModal } from "@/components/turnos/CargaManualModal";
+import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -163,6 +164,7 @@ export default function HistorialSocioPage() {
   const [paciente, setPaciente] = useState<PacienteInfo | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [isCargaManualOpen, setIsCargaManualOpen] = useState(false);
+  const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
   const canManualLoad = role === "admin";
   const podologiaResumen = useMemo(() => {
     const categoriaNormalizada = normalizeText(categoria);
@@ -456,6 +458,7 @@ export default function HistorialSocioPage() {
                   <TableHead>Prestacion</TableHead>
                   <TableHead>Profesional</TableHead>
                   <TableHead>Estado turno</TableHead>
+                  <TableHead>Acciones</TableHead>
                   {/* <TableHead>Estado atencion</TableHead> */}
                 </TableRow>
               </TableHeader>
@@ -488,6 +491,15 @@ export default function HistorialSocioPage() {
                         ) : null}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTurnoDetalleId(Number(item.turno_id))}
+                      >
+                        Ver detalle
+                      </Button>
+                    </TableCell>
                     {/* <TableCell>
                       {item.estado_atencion ? (
                         <Badge className={estadoClass(item.estado_atencion)}>{item.estado_atencion}</Badge>
@@ -510,6 +522,13 @@ export default function HistorialSocioPage() {
         codSoc={codSoc}
         adherenteCodigo={adherente}
         nombrePaciente={paciente?.nombre ?? "Paciente"}
+      />
+
+      <TurnoDetalleModal
+        isOpen={turnoDetalleId !== null}
+        turnoId={turnoDetalleId}
+        onClose={() => setTurnoDetalleId(null)}
+        onSaved={() => setReloadToken((prev) => prev + 1)}
       />
     </div>
   );

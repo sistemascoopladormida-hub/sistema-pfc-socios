@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CalendarPlus2, CheckCircle2, CircleOff, XCircle } from "lucide-react";
+import { CalendarPlus2, CheckCircle2, CircleOff, Eye, XCircle } from "lucide-react";
 
+import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,7 @@ export default function TurnosPage() {
   const { role } = useUser();
   const [isLoading, setIsLoading] = useState(true);
   const [turnos, setTurnos] = useState<TurnoRow[]>([]);
+  const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
 
   async function fetchTurnos() {
     const response = await fetch("/api/turnos", { cache: "no-store" });
@@ -211,6 +213,12 @@ export default function TurnosPage() {
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
                       <ActionButton
+                        tone="slate"
+                        icon={<Eye className="mr-1 h-3.5 w-3.5" />}
+                        label="Detalle"
+                        onClick={() => setTurnoDetalleId(turno.id)}
+                      />
+                      <ActionButton
                         tone="teal"
                         icon={<CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
                         label="Atendido"
@@ -245,6 +253,17 @@ export default function TurnosPage() {
         )}
       </CardContent>
       </Card>
+
+      <TurnoDetalleModal
+        isOpen={turnoDetalleId !== null}
+        turnoId={turnoDetalleId}
+        onClose={() => setTurnoDetalleId(null)}
+        onSaved={() => {
+          fetchTurnos().catch(() => {
+            toast.error("No se pudo refrescar la lista de turnos");
+          });
+        }}
+      />
     </div>
   );
 }

@@ -135,7 +135,7 @@ export default function ReportesPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="bg-white shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-slate-600">Prestaciones totales del mes</CardTitle>
+            <CardTitle className="text-sm text-slate-600">Prestaciones totales registradas</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-slate-900">

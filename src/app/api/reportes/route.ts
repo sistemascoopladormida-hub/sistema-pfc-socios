@@ -37,7 +37,15 @@ export async function GET() {
     const billingPool = await getSqlConnection();
     const pfcPool = await getSqlConnectionPfc();
 
-    const [prestacionesUsoResult, consumoSociosResult, estadisticasResult] = await Promise.all([
+    const [
+      prestacionesUsoMesResult,
+      prestacionesUsoAnioResult,
+      prestacionesUsoHistoricoResult,
+      consumoSociosMesResult,
+      consumoSociosAnioResult,
+      consumoSociosHistoricoResult,
+      estadisticasResult,
+    ] = await Promise.all([
       pfcPool.request().query(`
         SELECT TOP 10
           p.nombre,
@@ -52,6 +60,28 @@ export async function GET() {
         ORDER BY sesiones DESC
       `),
       pfcPool.request().query(`
+        SELECT TOP 10
+          p.nombre,
+          COUNT(*) as sesiones
+        FROM turnos t
+        JOIN prestaciones p ON p.id = t.prestacion_id
+        WHERE
+          t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
+        GROUP BY p.nombre
+        ORDER BY sesiones DESC
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 10
+          p.nombre,
+          COUNT(*) as sesiones
+        FROM turnos t
+        JOIN prestaciones p ON p.id = t.prestacion_id
+        WHERE t.estado = 'ATENDIDO'
+        GROUP BY p.nombre
+        ORDER BY sesiones DESC
+      `),
+      pfcPool.request().query(`
         SELECT TOP 8
           t.cod_soc,
           t.adherente_codigo,
@@ -61,6 +91,28 @@ export async function GET() {
           t.estado = 'ATENDIDO'
           AND MONTH(t.fecha) = MONTH(GETDATE())
           AND YEAR(t.fecha) = YEAR(GETDATE())
+        GROUP BY t.cod_soc, t.adherente_codigo
+        ORDER BY sesiones DESC
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 8
+          t.cod_soc,
+          t.adherente_codigo,
+          COUNT(*) as sesiones
+        FROM turnos t
+        WHERE
+          t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
+        GROUP BY t.cod_soc, t.adherente_codigo
+        ORDER BY sesiones DESC
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 8
+          t.cod_soc,
+          t.adherente_codigo,
+          COUNT(*) as sesiones
+        FROM turnos t
+        WHERE t.estado = 'ATENDIDO'
         GROUP BY t.cod_soc, t.adherente_codigo
         ORDER BY sesiones DESC
       `),
@@ -79,12 +131,33 @@ export async function GET() {
       `),
     ]);
 
-    const prestacionesUso = (prestacionesUsoResult.recordset as PrestacionUsoRow[]).map((row) => ({
+    const prestacionesUsoMes = (prestacionesUsoMesResult.recordset as PrestacionUsoRow[]).map((row) => ({
       nombre: row.nombre,
       sesiones: toNumber(row.sesiones),
     }));
+    const prestacionesUsoAnio = (prestacionesUsoAnioResult.recordset as PrestacionUsoRow[]).map((row) => ({
+      nombre: row.nombre,
+      sesiones: toNumber(row.sesiones),
+    }));
+    const prestacionesUsoHistorico = (
+      prestacionesUsoHistoricoResult.recordset as PrestacionUsoRow[]
+    ).map((row) => ({
+      nombre: row.nombre,
+      sesiones: toNumber(row.sesiones),
+    }));
+    const prestacionesUso =
+      prestacionesUsoMes.length > 0
+        ? prestacionesUsoMes
+        : prestacionesUsoAnio.length > 0
+          ? prestacionesUsoAnio
+          : prestacionesUsoHistorico;
 
-    const consumoRows = consumoSociosResult.recordset as ConsumoSocioRow[];
+    const consumoRows =
+      (consumoSociosMesResult.recordset as ConsumoSocioRow[]).length > 0
+        ? (consumoSociosMesResult.recordset as ConsumoSocioRow[])
+        : (consumoSociosAnioResult.recordset as ConsumoSocioRow[]).length > 0
+          ? (consumoSociosAnioResult.recordset as ConsumoSocioRow[])
+          : (consumoSociosHistoricoResult.recordset as ConsumoSocioRow[]);
     const codSocList = [
       ...new Set(consumoRows.map((item) => Number(item.cod_soc)).filter((value) => Number.isInteger(value))),
     ];

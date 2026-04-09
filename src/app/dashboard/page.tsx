@@ -205,9 +205,9 @@ export default function DashboardPage() {
             tone="teal"
           />
           <MetricCard
-            label="Prestaciones del mes"
+            label="Prestaciones registradas"
             value={dashboardData.prestaciones_mes}
-            description="Atenciones realizadas en el mes."
+            description="Atenciones (mes actual, o periodo con datos)."
             icon={HeartPulse}
             tone="teal"
           />

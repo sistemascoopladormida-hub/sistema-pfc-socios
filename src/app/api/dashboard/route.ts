@@ -60,8 +60,12 @@ export async function GET() {
     const [
       turnosHoyResult,
       profesionalesActivosResult,
-      prestacionesMesResult,
-      prestacionesTopResult,
+      prestacionesMesActualResult,
+      prestacionesAnioResult,
+      prestacionesHistoricoResult,
+      prestacionesTopMesResult,
+      prestacionesTopAnioResult,
+      prestacionesTopHistoricoResult,
       turnosRecientesResult,
     ] = await Promise.all([
       pfcPool.request().query(`
@@ -82,6 +86,17 @@ export async function GET() {
           AND YEAR(fecha) = YEAR(GETDATE())
       `),
       pfcPool.request().query(`
+        SELECT COUNT(*) as total
+        FROM turnos
+        WHERE estado = 'ATENDIDO'
+          AND YEAR(fecha) = YEAR(GETDATE())
+      `),
+      pfcPool.request().query(`
+        SELECT COUNT(*) as total
+        FROM turnos
+        WHERE estado = 'ATENDIDO'
+      `),
+      pfcPool.request().query(`
         SELECT TOP 5
           p.nombre,
           COUNT(*) as total
@@ -90,6 +105,27 @@ export async function GET() {
         WHERE t.estado = 'ATENDIDO'
           AND MONTH(t.fecha) = MONTH(GETDATE())
           AND YEAR(t.fecha) = YEAR(GETDATE())
+        GROUP BY p.nombre
+        ORDER BY total DESC
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 5
+          p.nombre,
+          COUNT(*) as total
+        FROM turnos t
+        JOIN prestaciones p ON p.id = t.prestacion_id
+        WHERE t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
+        GROUP BY p.nombre
+        ORDER BY total DESC
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 5
+          p.nombre,
+          COUNT(*) as total
+        FROM turnos t
+        JOIN prestaciones p ON p.id = t.prestacion_id
+        WHERE t.estado = 'ATENDIDO'
         GROUP BY p.nombre
         ORDER BY total DESC
       `),
@@ -163,12 +199,40 @@ export async function GET() {
     const profesionalesActivos = toNumber(
       (profesionalesActivosResult.recordset[0] as TotalRow | undefined)?.total
     );
-    const prestacionesMes = toNumber((prestacionesMesResult.recordset[0] as TotalRow | undefined)?.total);
+    const prestacionesMesActual = toNumber(
+      (prestacionesMesActualResult.recordset[0] as TotalRow | undefined)?.total
+    );
+    const prestacionesAnio = toNumber((prestacionesAnioResult.recordset[0] as TotalRow | undefined)?.total);
+    const prestacionesHistorico = toNumber(
+      (prestacionesHistoricoResult.recordset[0] as TotalRow | undefined)?.total
+    );
+    const prestacionesMes =
+      prestacionesMesActual > 0
+        ? prestacionesMesActual
+        : prestacionesAnio > 0
+          ? prestacionesAnio
+          : prestacionesHistorico;
 
-    const prestacionesTop = (prestacionesTopResult.recordset as PrestacionTopRow[]).map((row) => ({
+    const prestacionesTopMes = (prestacionesTopMesResult.recordset as PrestacionTopRow[]).map((row) => ({
       nombre: row.nombre,
       total: toNumber(row.total),
     }));
+    const prestacionesTopAnio = (prestacionesTopAnioResult.recordset as PrestacionTopRow[]).map((row) => ({
+      nombre: row.nombre,
+      total: toNumber(row.total),
+    }));
+    const prestacionesTopHistorico = (
+      prestacionesTopHistoricoResult.recordset as PrestacionTopRow[]
+    ).map((row) => ({
+      nombre: row.nombre,
+      total: toNumber(row.total),
+    }));
+    const prestacionesTop =
+      prestacionesTopMes.length > 0
+        ? prestacionesTopMes
+        : prestacionesTopAnio.length > 0
+          ? prestacionesTopAnio
+          : prestacionesTopHistorico;
 
     const turnosRows = turnosRecientesResult.recordset as TurnoRecienteRow[];
     const codSocList = [

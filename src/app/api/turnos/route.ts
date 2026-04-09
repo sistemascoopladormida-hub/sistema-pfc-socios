@@ -128,6 +128,10 @@ function categoriaPlanLabel(value: string) {
   return value;
 }
 
+function isCategoriaBasica(value: string) {
+  return normalizeCategoria(value).includes("BASICA");
+}
+
 function buildInList(values: number[]) {
   const uniques = [...new Set(values.filter((value) => Number.isInteger(value) && value >= 0))];
   if (uniques.length === 0) return "NULL";
@@ -652,6 +656,16 @@ export async function POST(request: Request) {
       `);
 
     const usadasPrestacion = Number(coberturaUsadaResult.recordset[0]?.usadas ?? 0);
+    const prestacionMetaResult = await pool
+      .request()
+      .input("prestacion", sql.Int, payload.prestacionId)
+      .query(`
+        SELECT TOP 1 nombre
+        FROM prestaciones
+        WHERE id = @prestacion
+      `);
+    const nombrePrestacionSeleccionada = String(prestacionMetaResult.recordset[0]?.nombre ?? "");
+
     const coberturaAnualResult = await pool
       .request()
       .input("prestacion", sql.Int, payload.prestacionId)
@@ -677,6 +691,38 @@ export async function POST(request: Request) {
         success: false,
         error: "Cobertura anual alcanzada para esta prestacion",
       });
+    }
+
+    const esPsicologiaAdultoInfantil =
+      normalizeCategoria(nombrePrestacionSeleccionada).includes("PSICOLOGIA") &&
+      (normalizeCategoria(nombrePrestacionSeleccionada).includes("ADULTO") ||
+        normalizeCategoria(nombrePrestacionSeleccionada).includes("INFANTIL"));
+    if (isCategoriaBasica(categoriaPaciente) && esPsicologiaAdultoInfantil) {
+      const psicologiaBasicaResult = await pool
+        .request()
+        .input("cod_soc", sql.Int, payload.codSoc)
+        .input("adherente_codigo", sql.Int, payload.adherenteCodigo)
+        .query(`
+          SELECT COUNT(*) as usadas
+          FROM turnos t
+          JOIN prestaciones p ON p.id = t.${turnosPrestacionColumn}
+          WHERE ${scopeWhere}
+            AND t.estado = 'ATENDIDO'
+            AND YEAR(t.fecha) = YEAR(GETDATE())
+            AND p.nombre COLLATE Latin1_General_CI_AI LIKE '%PSICOLOGIA%'
+            AND (
+              p.nombre COLLATE Latin1_General_CI_AI LIKE '%ADULTO%'
+              OR p.nombre COLLATE Latin1_General_CI_AI LIKE '%INFANTIL%'
+            )
+        `);
+      const usadasPsicologiaBasica = Number(psicologiaBasicaResult.recordset[0]?.usadas ?? 0);
+      if (usadasPsicologiaBasica >= 12) {
+        return NextResponse.json({
+          success: false,
+          error:
+            "El paciente alcanzó el límite anual compartido de Psicología Básica (12 sesiones entre Adulto e Infantil)",
+        });
+      }
     }
 
     const coberturaTotalUsadaResult = await pool

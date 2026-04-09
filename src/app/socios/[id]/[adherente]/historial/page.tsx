@@ -135,6 +135,14 @@ function normalizeText(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function getPsicologiaTipo(value: string) {
+  const normalized = normalizeText(value);
+  if (!normalized.includes("PSICOLOGIA")) return null;
+  if (normalized.includes("INFANTIL")) return "Infantil";
+  if (normalized.includes("ADULTO")) return "Adulto";
+  return "Psicología";
+}
+
 export default function HistorialSocioPage() {
   const params = useParams<{ id: string; adherente: string }>();
   const { role } = useUser();
@@ -184,6 +192,16 @@ export default function HistorialSocioPage() {
       percent,
       prestaciones: podologiaItems.map((item) => item.prestacion),
     };
+  }, [categoria, cobertura]);
+  const psicologiaBasicaResumen = useMemo(() => {
+    const categoriaNormalizada = normalizeText(categoria);
+    if (!categoriaNormalizada.includes("BASICA")) return null;
+    const psicologiaItems = cobertura.filter((item) => getPsicologiaTipo(item.prestacion) !== null);
+    if (psicologiaItems.length === 0) return null;
+    const usadas = Number(psicologiaItems[0]?.utilizadas ?? 0);
+    const maximoCompartido = 12;
+    const restantes = Math.max(maximoCompartido - usadas, 0);
+    return { usadas, maximoCompartido, restantes };
   }, [categoria, cobertura]);
 
   useEffect(() => {
@@ -360,6 +378,12 @@ export default function HistorialSocioPage() {
                       <CardContent className="space-y-3 pt-4">
                         <p className="font-medium">{item.prestacion}</p>
                         <p className="text-xs text-slate-500">{item.especialidad}</p>
+                        {getPsicologiaTipo(item.prestacion) ? (
+                          <div className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
+                            Tipo de sesión:{" "}
+                            <span className="font-semibold">{getPsicologiaTipo(item.prestacion)}</span>
+                          </div>
+                        ) : null}
                         {podologiaResumen && esPodologia ? (
                           <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
                             Sesiones compartidas de podología ({podologiaResumen.isPlus ? "CAT PLUS" : "CAT BÁSICA"}):{" "}
@@ -367,6 +391,16 @@ export default function HistorialSocioPage() {
                               {podologiaResumen.usadas} / {podologiaResumen.maximoCompartido}
                             </span>{" "}
                             - Restantes: <span className="font-semibold">{podologiaResumen.restantes}</span>
+                          </div>
+                        ) : null}
+                        {psicologiaBasicaResumen && getPsicologiaTipo(item.prestacion) ? (
+                          <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-800">
+                            Cupo compartido Psicología CAT BÁSICA:{" "}
+                            <span className="font-semibold">
+                              {psicologiaBasicaResumen.usadas} / {psicologiaBasicaResumen.maximoCompartido}
+                            </span>{" "}
+                            - Restantes:{" "}
+                            <span className="font-semibold">{psicologiaBasicaResumen.restantes}</span>
                           </div>
                         ) : null}
                         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
@@ -430,7 +464,16 @@ export default function HistorialSocioPage() {
                   <TableRow key={item.turno_id}>
                     <TableCell>{toFecha(item.fecha)}</TableCell>
                     <TableCell>{toHora(item.hora)}</TableCell>
-                    <TableCell>{item.prestacion}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span>{item.prestacion}</span>
+                        {getPsicologiaTipo(item.prestacion) ? (
+                          <span className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                            {getPsicologiaTipo(item.prestacion)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>{item.profesional}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">

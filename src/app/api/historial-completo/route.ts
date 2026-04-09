@@ -67,6 +67,18 @@ function normalizeCategoria(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function isCategoriaBasica(value: string) {
+  return normalizeCategoria(value).includes("BASICA");
+}
+
+function isPsicologiaAdultoInfantil(value: string) {
+  const normalized = normalizeCategoria(value);
+  return (
+    normalized.includes("PSICOLOGIA") &&
+    (normalized.includes("ADULTO") || normalized.includes("INFANTIL"))
+  );
+}
+
 function buildInList(values: number[]) {
   const uniques = [...new Set(values.filter((value) => Number.isInteger(value) && value >= 0))];
   if (uniques.length === 0) return "NULL";
@@ -343,6 +355,28 @@ export async function GET(request: Request) {
         restantes,
       };
     });
+    if (isCategoriaBasica(categoriaPaciente)) {
+      const psicologiaIndexes = cobertura
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => isPsicologiaAdultoInfantil(item.prestacion))
+        .map(({ index }) => index);
+      if (psicologiaIndexes.length > 0) {
+        const usadasCompartidas = psicologiaIndexes.reduce(
+          (acc, index) => acc + Number(cobertura[index]?.utilizadas ?? 0),
+          0
+        );
+        const maximoCompartido = 12;
+        const restantesCompartidas = Math.max(maximoCompartido - usadasCompartidas, 0);
+        for (const index of psicologiaIndexes) {
+          cobertura[index] = {
+            ...cobertura[index],
+            maximo: maximoCompartido,
+            utilizadas: usadasCompartidas,
+            restantes: restantesCompartidas,
+          };
+        }
+      }
+    }
 
     const resumen = historial.reduce(
       (acc, row) => {

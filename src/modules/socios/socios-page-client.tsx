@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ClipboardList, Search, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardList, Loader2, Search, Users } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 import { DataBadge } from "@/components/ui/data-badge";
 import { Button } from "@/components/ui/button";
@@ -70,12 +71,17 @@ function getBeneficioLabel(row: SocioListadoRow) {
   return "Por definir";
 }
 
+/** Alineado con DEFAULT_LIMIT en /api/socios: menos filas = respuesta y render más rápidos. */
+const SOCIOS_PAGE_LIMIT = 500;
+
 export function SociosPageClient() {
   const { role } = useUser();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [socios, setSocios] = useState<SocioListadoRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [grupoOpen, setGrupoOpen] = useState(false);
   const [grupoLoading, setGrupoLoading] = useState(false);
@@ -86,7 +92,7 @@ export function SociosPageClient() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedQuery(query.trim());
-    }, 350);
+    }, 450);
 
     return () => {
       window.clearTimeout(timer);
@@ -97,12 +103,17 @@ export function SociosPageClient() {
     const abortController = new AbortController();
 
     async function loadSocios() {
+      const isFirstLoad = !hasLoadedOnceRef.current;
       try {
-        setIsLoading(true);
+        if (isFirstLoad) {
+          setIsLoading(true);
+        } else {
+          setIsRefreshing(true);
+        }
         setLoadError(null);
 
         const response = await fetch(
-          `/api/socios?buscar=${encodeURIComponent(debouncedQuery)}&limit=2500`,
+          `/api/socios?buscar=${encodeURIComponent(debouncedQuery)}&limit=${SOCIOS_PAGE_LIMIT}`,
           {
             method: "GET",
             signal: abortController.signal,
@@ -117,11 +128,17 @@ export function SociosPageClient() {
         }
 
         setSocios(Array.isArray(data.data) ? data.data : []);
+        hasLoadedOnceRef.current = true;
       } catch (error) {
         if ((error as Error).name === "AbortError") return;
-        setLoadError("No se pudieron cargar los socios del sistema Procoop");
+        if (isFirstLoad) {
+          setLoadError("No se pudieron cargar los socios del sistema Procoop");
+        } else {
+          toast.error("No se pudo actualizar el listado. Intentá de nuevo.");
+        }
       } finally {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
     }
 
@@ -268,6 +285,10 @@ export function SociosPageClient() {
               autoFocus
             />
           </motion.div>
+          <p className="text-xs text-slate-500">
+            Se listan hasta {SOCIOS_PAGE_LIMIT} filas por consulta para mantener la vista rápida. Si buscás por DNI, escribí
+            desde el primer dígito; por nombre o apellido, al menos las primeras letras.
+          </p>
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-2 py-1 text-amber-700">
               <span className="h-2 w-2 rounded-full bg-amber-500" />
@@ -282,7 +303,14 @@ export function SociosPageClient() {
       </Card>
 
       <Card className="bg-white">
-        <CardContent className="pt-5">
+        <CardContent className="relative pt-5">
+        {isRefreshing ? (
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-3 py-1.5 text-xs text-slate-600 shadow-sm">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Actualizando listado...
+          </div>
+        ) : null}
+        <div className={isRefreshing ? "opacity-60" : ""}>
         <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Card className="overflow-hidden ring-1 ring-amber-200">
             <div className="h-full border-l-[3px] border-amber-500 pl-1">
@@ -409,6 +437,7 @@ export function SociosPageClient() {
             </TableBody>
           </Table>
         )}
+        </div>
       </CardContent>
       </Card>
 

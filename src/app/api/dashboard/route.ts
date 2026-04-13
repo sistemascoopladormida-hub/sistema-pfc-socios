@@ -17,6 +17,9 @@ type PrestacionTopRow = {
   total: number | string;
 };
 
+/** Cantidad de prestaciones con más atenciones que se envían al gráfico circular. */
+const PRESTACIONES_TOP_GRAFICO = 10;
+
 type TurnoRecienteRow = {
   id: number;
   fecha: string;
@@ -63,9 +66,6 @@ export async function GET() {
       prestacionesMesActualResult,
       prestacionesAnioResult,
       prestacionesHistoricoResult,
-      prestacionesTopMesResult,
-      prestacionesTopAnioResult,
-      prestacionesTopHistoricoResult,
       turnosRecientesResult,
     ] = await Promise.all([
       pfcPool.request().query(`
@@ -95,39 +95,6 @@ export async function GET() {
         SELECT COUNT(*) as total
         FROM turnos
         WHERE estado = 'ATENDIDO'
-      `),
-      pfcPool.request().query(`
-        SELECT TOP 5
-          p.nombre,
-          COUNT(*) as total
-        FROM turnos t
-        JOIN prestaciones p ON p.id = t.prestacion_id
-        WHERE t.estado = 'ATENDIDO'
-          AND MONTH(t.fecha) = MONTH(GETDATE())
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-        GROUP BY p.nombre
-        ORDER BY total DESC
-      `),
-      pfcPool.request().query(`
-        SELECT TOP 5
-          p.nombre,
-          COUNT(*) as total
-        FROM turnos t
-        JOIN prestaciones p ON p.id = t.prestacion_id
-        WHERE t.estado = 'ATENDIDO'
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-        GROUP BY p.nombre
-        ORDER BY total DESC
-      `),
-      pfcPool.request().query(`
-        SELECT TOP 5
-          p.nombre,
-          COUNT(*) as total
-        FROM turnos t
-        JOIN prestaciones p ON p.id = t.prestacion_id
-        WHERE t.estado = 'ATENDIDO'
-        GROUP BY p.nombre
-        ORDER BY total DESC
       `),
       pfcPool.request().query(`
         SELECT TOP 5
@@ -213,26 +180,47 @@ export async function GET() {
           ? prestacionesAnio
           : prestacionesHistorico;
 
-    const prestacionesTopMes = (prestacionesTopMesResult.recordset as PrestacionTopRow[]).map((row) => ({
+    /** Misma lógica que el total de prestaciones del mes: mes actual si hay datos, si no año, si no histórico. */
+    const periodoPrestacionesUso: "mes" | "anio" | "historico" =
+      prestacionesMesActual > 0 ? "mes" : prestacionesAnio > 0 ? "anio" : "historico";
+
+    const joinTurnosAtendidos =
+      periodoPrestacionesUso === "mes"
+        ? `
+        LEFT JOIN turnos t ON t.prestacion_id = p.id
+          AND t.estado = 'ATENDIDO'
+          AND MONTH(t.fecha) = MONTH(GETDATE())
+          AND YEAR(t.fecha) = YEAR(GETDATE())
+      `
+        : periodoPrestacionesUso === "anio"
+          ? `
+        LEFT JOIN turnos t ON t.prestacion_id = p.id
+          AND t.estado = 'ATENDIDO'
+          AND YEAR(t.fecha) = YEAR(GETDATE())
+      `
+          : `
+        LEFT JOIN turnos t ON t.prestacion_id = p.id
+          AND t.estado = 'ATENDIDO'
+      `;
+
+    const prestacionesUsoResult = await pfcPool.request().query(`
+      SELECT
+        p.nombre,
+        COUNT(t.id) AS total
+      FROM prestaciones p
+      ${joinTurnosAtendidos}
+      GROUP BY p.id, p.nombre
+      ORDER BY total DESC, p.nombre ASC
+    `);
+
+    const prestacionesUso = (prestacionesUsoResult.recordset as PrestacionTopRow[]).map((row) => ({
       nombre: row.nombre,
       total: toNumber(row.total),
     }));
-    const prestacionesTopAnio = (prestacionesTopAnioResult.recordset as PrestacionTopRow[]).map((row) => ({
-      nombre: row.nombre,
-      total: toNumber(row.total),
-    }));
-    const prestacionesTopHistorico = (
-      prestacionesTopHistoricoResult.recordset as PrestacionTopRow[]
-    ).map((row) => ({
-      nombre: row.nombre,
-      total: toNumber(row.total),
-    }));
-    const prestacionesTop =
-      prestacionesTopMes.length > 0
-        ? prestacionesTopMes
-        : prestacionesTopAnio.length > 0
-          ? prestacionesTopAnio
-          : prestacionesTopHistorico;
+
+    const prestacionesTop = prestacionesUso
+      .filter((row) => row.total > 0)
+      .slice(0, PRESTACIONES_TOP_GRAFICO);
 
     const turnosRows = turnosRecientesResult.recordset as TurnoRecienteRow[];
     const codSocList = [
@@ -292,6 +280,8 @@ export async function GET() {
         profesionales_activos: profesionalesActivos,
         prestaciones_mes: prestacionesMes,
         prestaciones_top: prestacionesTop,
+        prestaciones_uso: prestacionesUso,
+        prestaciones_periodo: periodoPrestacionesUso,
         turnos_recientes: turnosRecientes,
       },
     });

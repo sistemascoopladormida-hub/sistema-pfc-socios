@@ -3,15 +3,20 @@
 import { useEffect, useState } from "react";
 import { Calendar, HeartPulse, Stethoscope, Users } from "lucide-react";
 import { motion } from "framer-motion";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+
+const PRESTACIONES_PIE_COLORS = [
+  "#0D6E5A",
+  "#138A3D",
+  "#0EA5E9",
+  "#2563EB",
+  "#6366F1",
+  "#059669",
+  "#B45309",
+  "#92400E",
+  "#0D9488",
+  "#4F46E5",
+];
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataBadge } from "@/components/ui/data-badge";
@@ -43,7 +48,11 @@ type DashboardResponse = {
     turnos_hoy: number;
     profesionales_activos: number;
     prestaciones_mes: number;
+    /** Top N prestaciones para el gráfico circular (las más usadas con al menos 1 atención). */
     prestaciones_top: Array<{ nombre: string; total: number }>;
+    /** Todas las prestaciones del catálogo con total de atenciones en el periodo (incluye 0). */
+    prestaciones_uso: Array<{ nombre: string; total: number }>;
+    prestaciones_periodo: "mes" | "anio" | "historico";
     turnos_recientes: Array<{
       id: number;
       socio: string;
@@ -65,6 +74,12 @@ const estadoLabel: Record<DashboardEstadoTurno, string> = {
   CANCELADO: "Cancelado",
   AUSENTE: "Ausente",
 };
+
+function labelPrestacionesPeriodo(periodo: DashboardData["prestaciones_periodo"]) {
+  if (periodo === "mes") return "Mes actual (atenciones atendidas)";
+  if (periodo === "anio") return "Año en curso (atenciones atendidas)";
+  return "Histórico completo (atenciones atendidas)";
+}
 
 export default function DashboardPage() {
   const { role } = useUser();
@@ -250,26 +265,95 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="bg-white shadow-sm">
-          <CardHeader>
-            <CardTitle>Prestaciones mas utilizadas</CardTitle>
+          <CardHeader className="space-y-1">
+            <CardTitle>Prestaciones más utilizadas</CardTitle>
+            <p className="text-sm text-slate-600">
+              Gráfico: las 10 prestaciones con más atenciones en el periodo (
+              {labelPrestacionesPeriodo(dashboardData.prestaciones_periodo)}). El listado debajo incluye el catálogo
+              completo.
+            </p>
           </CardHeader>
-          <CardContent className="h-80">
+          <CardContent className="h-80 min-h-[320px]">
             {dashboardData.prestaciones_top.length === 0 ? (
-              <EmptyState />
+              <EmptyState message="No hay atenciones atendidas en el periodo para armar el gráfico." />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dashboardData.prestaciones_top} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="nombre" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="total" fill="#138A3D" radius={[6, 6, 0, 0]} />
-                </BarChart>
+                <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                  <Pie
+                    data={dashboardData.prestaciones_top}
+                    dataKey="total"
+                    nameKey="nombre"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={56}
+                    outerRadius={96}
+                    paddingAngle={2}
+                    stroke="#fff"
+                    strokeWidth={1}
+                  >
+                    {dashboardData.prestaciones_top.map((_, index) => (
+                      <Cell key={`slice-${index}`} fill={PRESTACIONES_PIE_COLORS[index % PRESTACIONES_PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0].payload as { nombre: string; total: number };
+                      return (
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+                          <p className="font-medium text-slate-900">{row.nombre}</p>
+                          <p className="text-slate-600">{row.total} atenciones</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    layout="horizontal"
+                    formatter={(value) => <span className="text-xs text-slate-700">{value}</span>}
+                  />
+                </PieChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* <Card className="bg-white shadow-sm">
+        <CardHeader className="space-y-1">
+          <CardTitle>Todas las prestaciones</CardTitle>
+          <p className="text-sm text-slate-600">
+            Total de atenciones atendidas por prestación ({labelPrestacionesPeriodo(dashboardData.prestaciones_periodo)}
+            ). Ordenado por cantidad descendente.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {dashboardData.prestaciones_uso.length === 0 ? (
+            <EmptyState message="No hay prestaciones en el catálogo." />
+          ) : (
+            <div className="max-h-[min(480px,60vh)] overflow-auto rounded-lg border border-slate-200">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Prestación</TableHead>
+                    <TableHead className="text-right">Atenciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dashboardData.prestaciones_uso.map((row, index) => (
+                    <TableRow key={`${row.nombre}-${index}`}>
+                      <TableCell className="text-slate-500">{index + 1}</TableCell>
+                      <TableCell className="font-medium text-slate-900">{row.nombre}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card> */}
 
       <Card className="bg-white shadow-sm">
         <CardHeader>

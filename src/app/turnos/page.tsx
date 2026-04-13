@@ -53,6 +53,8 @@ export default function TurnosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("TODOS");
   const [fechaFilter, setFechaFilter] = useState("");
+  const [prestacionFilter, setPrestacionFilter] = useState("");
+  const [profesionalFilter, setProfesionalFilter] = useState("");
 
   async function fetchTurnos() {
     const response = await fetch("/api/turnos", { cache: "no-store" });
@@ -232,6 +234,24 @@ export default function TurnosPage() {
     );
   }, [turnos]);
 
+  const prestacionesOpciones = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of turnos) {
+      const p = String(t.prestacion ?? "").trim();
+      if (p) set.add(p);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [turnos]);
+
+  const profesionalesOpciones = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of turnos) {
+      const p = String(t.profesional ?? "").trim();
+      if (p) set.add(p);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [turnos]);
+
   const turnosFiltrados = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
@@ -252,10 +272,14 @@ export default function TurnosPage() {
       const bySearch = !term || searchable.includes(term);
       const byEstado = estadoFilter === "TODOS" || estado === estadoFilter;
       const byFecha = !fechaFilter || fecha === fechaFilter;
+      const byPrestacion =
+        !prestacionFilter || String(turno.prestacion ?? "").trim() === prestacionFilter;
+      const byProfesional =
+        !profesionalFilter || String(turno.profesional ?? "").trim() === profesionalFilter;
 
-      return bySearch && byEstado && byFecha;
+      return bySearch && byEstado && byFecha && byPrestacion && byProfesional;
     });
-  }, [turnos, searchTerm, estadoFilter, fechaFilter]);
+  }, [turnos, searchTerm, estadoFilter, fechaFilter, prestacionFilter, profesionalFilter]);
 
   if (!canAccessModule(role, "turnos")) {
     return (
@@ -350,13 +374,43 @@ export default function TurnosPage() {
                   <option value="AUSENTE">Ausente</option>
                   <option value="CANCELADO">Cancelado</option>
                 </select>
+                <select
+                  value={prestacionFilter}
+                  onChange={(event) => setPrestacionFilter(event.target.value)}
+                  className="h-10 min-w-[200px] max-w-[min(100%,280px)] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                  title="Filtrar por prestación"
+                >
+                  <option value="">Todas las prestaciones</option>
+                  {prestacionesOpciones.map((nombre) => (
+                    <option key={nombre} value={nombre}>
+                      {nombre}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={profesionalFilter}
+                  onChange={(event) => setProfesionalFilter(event.target.value)}
+                  className="h-10 min-w-[200px] max-w-[min(100%,280px)] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                  title="Filtrar por profesional"
+                >
+                  <option value="">Todos los profesionales</option>
+                  {profesionalesOpciones.map((nombre) => (
+                    <option key={nombre} value={nombre}>
+                      {nombre}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="date"
                   value={fechaFilter}
                   onChange={(event) => setFechaFilter(event.target.value)}
                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
                 />
-                {(searchTerm || estadoFilter !== "TODOS" || fechaFilter) && (
+                {(searchTerm ||
+                  estadoFilter !== "TODOS" ||
+                  fechaFilter ||
+                  prestacionFilter ||
+                  profesionalFilter) && (
                   <Button
                     variant="outline"
                     className="h-10"
@@ -364,6 +418,8 @@ export default function TurnosPage() {
                       setSearchTerm("");
                       setEstadoFilter("TODOS");
                       setFechaFilter("");
+                      setPrestacionFilter("");
+                      setProfesionalFilter("");
                     }}
                   >
                     Limpiar filtros
@@ -457,7 +513,7 @@ export default function TurnosPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8border-rose-200 px-2.5 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          className="h-8 border-rose-200 px-2.5 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                           onClick={() => eliminarTurno(turno.id)}
                         >
                           <Trash2 className="" />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { PlusCircle, Trash2 } from "lucide-react";
+import { PlusCircle, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { CargaManualModal } from "@/components/turnos/CargaManualModal";
@@ -11,6 +11,13 @@ import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Loading } from "@/components/ui/loading";
 import {
@@ -34,6 +41,22 @@ type HistorialItem = {
   profesional_id: number;
   profesional: string;
   estado_atencion: string | null;
+};
+
+type FamiliaHistorialItem = HistorialItem & {
+  adherente_codigo: number;
+  familiar_nombre: string;
+  familiar_vinculo: string;
+};
+
+type FamiliaHistorialApiResponse = {
+  success: boolean;
+  data?: {
+    items: FamiliaHistorialItem[];
+    categoria: string | null;
+    mensaje: string | null;
+  };
+  error?: string;
 };
 
 type CoberturaItem = {
@@ -166,6 +189,11 @@ export default function HistorialSocioPage() {
   const [reloadToken, setReloadToken] = useState(0);
   const [isCargaManualOpen, setIsCargaManualOpen] = useState(false);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
+  const [familiaDialogOpen, setFamiliaDialogOpen] = useState(false);
+  const [familiaLoading, setFamiliaLoading] = useState(false);
+  const [familiaError, setFamiliaError] = useState<string | null>(null);
+  const [familiaItems, setFamiliaItems] = useState<FamiliaHistorialItem[]>([]);
+  const [familiaMensaje, setFamiliaMensaje] = useState<string | null>(null);
   const canManualLoad = role === "admin";
   const canDeleteTurno = role === "admin";
   const podologiaResumen = useMemo(() => {
@@ -270,6 +298,46 @@ export default function HistorialSocioPage() {
     loadData();
     return () => controller.abort();
   }, [adherente, codSoc, reloadToken]);
+
+  useEffect(() => {
+    if (!familiaDialogOpen) return;
+
+    const controller = new AbortController();
+
+    async function loadFamiliaHistorial() {
+      try {
+        setFamiliaLoading(true);
+        setFamiliaError(null);
+        setFamiliaMensaje(null);
+
+        const response = await fetch(
+          `/api/historial-familia-compartida?cod_soc=${encodeURIComponent(String(codSoc))}&adherente_codigo=${encodeURIComponent(String(adherente))}`,
+          { cache: "no-store", signal: controller.signal }
+        );
+        const data = (await response.json()) as FamiliaHistorialApiResponse;
+        if (!response.ok || !data.success || !data.data) {
+          throw new Error(data.error ?? "No se pudo cargar el historial familiar");
+        }
+        setFamiliaItems(Array.isArray(data.data.items) ? data.data.items : []);
+        setFamiliaMensaje(data.data.mensaje ?? null);
+      } catch (loadError) {
+        if ((loadError as Error).name === "AbortError") return;
+        setFamiliaError(loadError instanceof Error ? loadError.message : "Error al cargar el historial familiar");
+        setFamiliaItems([]);
+      } finally {
+        setFamiliaLoading(false);
+      }
+    }
+
+    if (!Number.isInteger(codSoc) || codSoc <= 0 || !Number.isInteger(adherente) || adherente < 0) {
+      setFamiliaError("Parámetros inválidos");
+      setFamiliaLoading(false);
+      return () => controller.abort();
+    }
+
+    loadFamiliaHistorial();
+    return () => controller.abort();
+  }, [familiaDialogOpen, codSoc, adherente]);
 
   async function handleDeleteTurno(turnoId: number) {
     if (!canDeleteTurno) return;
@@ -456,18 +524,29 @@ export default function HistorialSocioPage() {
       </Card>
 
       <Card className="bg-white">
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Historial de Turnos</CardTitle>
-          {canManualLoad ? (
+          <div className="flex flex-wrap items-center gap-2">
             <Button
+              type="button"
               variant="outline"
-              className="border-teal-600 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
-              onClick={() => setIsCargaManualOpen(true)}
+              className="border-slate-300 text-slate-800 hover:bg-slate-50"
+              onClick={() => setFamiliaDialogOpen(true)}
             >
-              <PlusCircle className="mr-1 size-4" />
-              Cargar sesión pasada
+              <Users className="mr-1 size-4 shrink-0" />
+              Ver turnos de familiares (misma cobertura)
             </Button>
-          ) : null}
+            {canManualLoad ? (
+              <Button
+                variant="outline"
+                className="border-teal-600 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                onClick={() => setIsCargaManualOpen(true)}
+              >
+                <PlusCircle className="mr-1 size-4" />
+                Cargar sesión pasada
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent>
           {historial.length === 0 ? (
@@ -549,6 +628,104 @@ export default function HistorialSocioPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={familiaDialogOpen} onOpenChange={setFamiliaDialogOpen}>
+        <DialogContent className="flex max-h-[min(90vh,800px)] w-[calc(100vw-1.5rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+          <DialogHeader className="shrink-0 space-y-2 px-6 pt-6">
+            <DialogTitle className="pr-8">Turnos de familiares (misma cobertura de prestaciones)</DialogTitle>
+            <DialogDescription className="text-left text-sm text-slate-600">
+              Turnos de otros integrantes del mismo grupo familiar (mismo número de socio) para prestaciones incluidas en la
+              cobertura del plan
+              {categoria ? (
+                <span className="font-medium text-slate-800"> ({categoria})</span>
+              ) : null}
+              . No incluye los turnos del paciente que estás viendo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
+            {familiaLoading ? (
+              <Loading label="Cargando turnos del grupo familiar..." />
+            ) : familiaError ? (
+              <p className="text-sm text-red-600">{familiaError}</p>
+            ) : familiaItems.length === 0 ? (
+              <EmptyState
+                title="Sin turnos para mostrar"
+                message={familiaMensaje ?? "No hay turnos de otros familiares que coincidan con la cobertura del plan."}
+              />
+            ) : (
+              <div className="-mx-1 overflow-x-auto">
+                <Table className="w-full min-w-[920px] table-fixed border-collapse text-sm">
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="whitespace-normal align-bottom leading-tight">
+                        Familiar
+                      </TableHead>
+                      <TableHead className="whitespace-normal align-bottom leading-tight">Vínculo</TableHead>
+                      <TableHead className="align-bottom">Fecha</TableHead>
+                      <TableHead className="align-bottom">Hora</TableHead>
+                      <TableHead className="whitespace-normal align-bottom leading-tight">Prestación</TableHead>
+                      <TableHead className="whitespace-normal align-bottom leading-tight">Profesional</TableHead>
+                      <TableHead className="align-bottom">Estado</TableHead>
+                      <TableHead className="align-bottom">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {familiaItems.map((item) => (
+                      <TableRow key={item.turno_id} className="align-top">
+                        <TableCell className="wrap-break-word whitespace-normal py-3 align-top font-medium leading-snug text-slate-900">
+                          {item.familiar_nombre}
+                        </TableCell>
+                        <TableCell className="wrap-break-word whitespace-normal py-3 align-top leading-snug text-slate-600">
+                          {item.familiar_vinculo}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-3 align-top tabular-nums text-slate-800">
+                          {toFecha(item.fecha)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-3 align-top tabular-nums text-slate-800">
+                          {toHora(item.hora)}
+                        </TableCell>
+                        <TableCell className="wrap-break-word whitespace-normal py-3 align-top leading-snug">
+                          <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                            <span>{item.prestacion}</span>
+                            {getPsicologiaTipo(item.prestacion) ? (
+                              <span className="w-fit shrink-0 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                                {getPsicologiaTipo(item.prestacion)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="wrap-break-word whitespace-normal py-3 align-top leading-snug text-slate-800">
+                          {item.profesional}
+                        </TableCell>
+                        <TableCell className="py-3">
+                          <Badge className={`${estadoClass(item.estado_turno)} whitespace-nowrap`}>
+                            {item.estado_turno}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-3">
+                          <Button size="sm" variant="outline" onClick={() => setTurnoDetalleId(Number(item.turno_id))}>
+                            Ver detalle
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <CargaManualModal
         isOpen={isCargaManualOpen}

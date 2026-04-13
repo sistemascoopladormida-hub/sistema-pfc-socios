@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CalendarPlus2, CheckCircle2, CircleOff, Eye, XCircle } from "lucide-react";
+import {
+  CalendarPlus2,
+  ChevronRight,
+  Eye,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
-import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataBadge } from "@/components/ui/data-badge";
@@ -25,6 +30,8 @@ import {
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type TurnoEstado = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
+type EstadoFilter = "TODOS" | TurnoEstado;
+type EstadoOption = { value: TurnoEstado; disabled: boolean };
 
 type TurnoRow = {
   id: number;
@@ -43,6 +50,9 @@ export default function TurnosPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [turnos, setTurnos] = useState<TurnoRow[]>([]);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("TODOS");
+  const [fechaFilter, setFechaFilter] = useState("");
 
   async function fetchTurnos() {
     const response = await fetch("/api/turnos", { cache: "no-store" });
@@ -99,6 +109,57 @@ export default function TurnosPage() {
     return canMarkAsAtendido(turno);
   }
 
+  function normalizeEstado(estado: string): TurnoEstado {
+    const normalized = String(estado).toUpperCase();
+    if (normalized === "ATENDIDO") return "ATENDIDO";
+    if (normalized === "AUSENTE") return "AUSENTE";
+    if (normalized === "CANCELADO") return "CANCELADO";
+    return "RESERVADO";
+  }
+
+  function getEstadoOptions(turno: TurnoRow): EstadoOption[] {
+    const estado = normalizeEstado(String(turno.estado));
+    const puedeAtender = canMarkAsAtendido(turno);
+    const puedeAusente = canMarkAsAusente(turno);
+
+    if (estado === "ATENDIDO") {
+      return [
+        { value: "ATENDIDO", disabled: false },
+        { value: "AUSENTE", disabled: true },
+        { value: "CANCELADO", disabled: true },
+      ];
+    }
+    if (estado === "CANCELADO") {
+      return [
+        { value: "CANCELADO", disabled: false },
+        { value: "ATENDIDO", disabled: true },
+        { value: "AUSENTE", disabled: true },
+      ];
+    }
+    if (estado === "AUSENTE") {
+      return [
+        { value: "AUSENTE", disabled: false },
+        { value: "CANCELADO", disabled: false },
+        { value: "ATENDIDO", disabled: true },
+      ];
+    }
+
+    return [
+      { value: "RESERVADO", disabled: false },
+      { value: "ATENDIDO", disabled: !puedeAtender },
+      { value: "AUSENTE", disabled: !puedeAusente },
+      { value: "CANCELADO", disabled: false },
+    ];
+  }
+
+  function getEstadoKind(estado: string) {
+    const normalized = String(estado).toUpperCase();
+    if (normalized === "RESERVADO") return "reservado" as const;
+    if (normalized === "ATENDIDO") return "atendido" as const;
+    if (normalized === "AUSENTE") return "ausente" as const;
+    return "cancelado" as const;
+  }
+
   async function updateEstado(turnoId: number, action: "cancelar" | "atender" | "ausente") {
     const response = await fetch(`/api/turnos/${turnoId}/${action}`, {
       method: "PUT",
@@ -112,6 +173,89 @@ export default function TurnosPage() {
     toast.success(data.message ?? "Estado actualizado");
     await fetchTurnos();
   }
+
+  async function onEstadoSelect(turno: TurnoRow, nextEstado: TurnoEstado) {
+    const current = normalizeEstado(String(turno.estado));
+    if (nextEstado === current) return;
+
+    const actionMap: Record<Exclude<TurnoEstado, "RESERVADO">, "cancelar" | "atender" | "ausente"> = {
+      ATENDIDO: "atender",
+      AUSENTE: "ausente",
+      CANCELADO: "cancelar",
+    };
+
+    const action = actionMap[nextEstado as Exclude<TurnoEstado, "RESERVADO">];
+    if (!action) return;
+
+    const confirmar = window.confirm(`¿Confirmar cambio de estado a ${nextEstado}?`);
+    if (!confirmar) return;
+    await updateEstado(turno.id, action);
+  }
+
+  async function eliminarTurno(turnoId: number) {
+    const confirmar = window.confirm(
+      "¿Deseas eliminar este turno? Esta acción eliminará también su historial asociado y no se puede deshacer."
+    );
+    if (!confirmar) return;
+
+    const response = await fetch(`/api/turnos/${turnoId}`, {
+      method: "DELETE",
+    });
+    const data = (await response.json()) as { success: boolean; error?: string; message?: string };
+    if (!response.ok || !data.success) {
+      toast.error(data.error ?? "No se pudo eliminar el turno");
+      return;
+    }
+
+    toast.success(data.message ?? "Turno eliminado");
+    await fetchTurnos();
+  }
+
+  const resumen = useMemo(() => {
+    return turnos.reduce(
+      (acc, turno) => {
+        const estado = String(turno.estado).toUpperCase();
+        acc.total += 1;
+        if (estado === "RESERVADO") acc.reservados += 1;
+        if (estado === "ATENDIDO") acc.atendidos += 1;
+        if (estado === "AUSENTE") acc.ausentes += 1;
+        if (estado === "CANCELADO") acc.cancelados += 1;
+        return acc;
+      },
+      {
+        total: 0,
+        reservados: 0,
+        atendidos: 0,
+        ausentes: 0,
+        cancelados: 0,
+      }
+    );
+  }, [turnos]);
+
+  const turnosFiltrados = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    return turnos.filter((turno) => {
+      const estado = String(turno.estado).toUpperCase();
+      const fecha = String(turno.fecha).slice(0, 10);
+      const searchable = [
+        String(turno.id),
+        String(turno.cod_soc),
+        String(turno.adherente_codigo),
+        String(turno.nombre ?? ""),
+        String(turno.profesional ?? ""),
+        String(turno.prestacion ?? ""),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const bySearch = !term || searchable.includes(term);
+      const byEstado = estadoFilter === "TODOS" || estado === estadoFilter;
+      const byFecha = !fechaFilter || fecha === fechaFilter;
+
+      return bySearch && byEstado && byFecha;
+    });
+  }, [turnos, searchTerm, estadoFilter, fechaFilter]);
 
   if (!canAccessModule(role, "turnos")) {
     return (
@@ -145,19 +289,105 @@ export default function TurnosPage() {
         }
       />
 
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Card className="bg-white">
+          <CardContent className="py-4">
+            <p className="text-xs text-slate-500">Total</p>
+            <p className="text-2xl font-semibold text-slate-900">{resumen.total}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white">
+          <CardContent className="py-4">
+            <p className="text-xs text-slate-500">Reservados</p>
+            <p className="text-2xl font-semibold text-blue-700">{resumen.reservados}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white">
+          <CardContent className="py-4">
+            <p className="text-xs text-slate-500">Atendidos</p>
+            <p className="text-2xl font-semibold text-emerald-700">{resumen.atendidos}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white">
+          <CardContent className="py-4">
+            <p className="text-xs text-slate-500">Ausentes</p>
+            <p className="text-2xl font-semibold text-amber-700">{resumen.ausentes}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white">
+          <CardContent className="py-4">
+            <p className="text-xs text-slate-500">Cancelados</p>
+            <p className="text-2xl font-semibold text-rose-700">{resumen.cancelados}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="bg-white">
         <CardHeader>
-          <CardTitle className="text-[13px] font-semibold uppercase tracking-[0.08em] text-pfcText-muted">
-            Turnos y acciones
-          </CardTitle>
+          <div className="flex flex-col gap-3">
+            <CardTitle className="text-[13px] font-semibold uppercase tracking-[0.08em] text-pfcText-muted">
+              Turnos y acciones
+            </CardTitle>
+            <div className="flex flex-col gap-3 lg:flex-row">
+              <label className="relative w-full lg:max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Buscar por paciente, socio, profesional o prestación..."
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                />
+              </label>
+              <div className="flex flex-1 flex-wrap gap-2">
+                <select
+                  value={estadoFilter}
+                  onChange={(event) => setEstadoFilter(event.target.value as EstadoFilter)}
+                  className="h-10 min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                >
+                  <option value="TODOS">Todos los estados</option>
+                  <option value="RESERVADO">Reservado</option>
+                  <option value="ATENDIDO">Atendido</option>
+                  <option value="AUSENTE">Ausente</option>
+                  <option value="CANCELADO">Cancelado</option>
+                </select>
+                <input
+                  type="date"
+                  value={fechaFilter}
+                  onChange={(event) => setFechaFilter(event.target.value)}
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                />
+                {(searchTerm || estadoFilter !== "TODOS" || fechaFilter) && (
+                  <Button
+                    variant="outline"
+                    className="h-10"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setEstadoFilter("TODOS");
+                      setFechaFilter("");
+                    }}
+                  >
+                    Limpiar filtros
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Mostrando {turnosFiltrados.length} de {turnos.length} turnos.
+            </p>
+          </div>
         </CardHeader>
         <CardContent>
-        {turnos.length === 0 ? (
+        {turnosFiltrados.length === 0 ? (
           <EmptyState
-            title="Sin turnos para mostrar"
-            message="Todavía no hay turnos cargados en esta vista. Puedes crear uno nuevo para comenzar."
+            title={turnos.length === 0 ? "Sin turnos para mostrar" : "No hay resultados con esos filtros"}
+            message={
+              turnos.length === 0
+                ? "Todavía no hay turnos cargados en esta vista. Puedes crear uno nuevo para comenzar."
+                : "Prueba cambiar los filtros o limpiar la búsqueda para ver más resultados."
+            }
           />
         ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
           <Table className="min-w-[1200px]">
             <TableHeader>
               <TableRow>
@@ -174,7 +404,7 @@ export default function TurnosPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {turnos.map((turno, idx) => (
+              {turnosFiltrados.map((turno, idx) => (
                 <motion.tr
                   key={turno.id}
                   initial={{ opacity: 0, x: 8 }}
@@ -196,60 +426,50 @@ export default function TurnosPage() {
                   <TableCell>{normalizeHora(String(turno.hora)).slice(0, 5) || "No registrada"}</TableCell>
 
                   <TableCell>
-                    <DataBadge
-                      kind={
-                        String(turno.estado).toUpperCase() === "RESERVADO"
-                          ? "reservado"
-                          : String(turno.estado).toUpperCase() === "ATENDIDO"
-                            ? "atendido"
-                            : String(turno.estado).toUpperCase() === "AUSENTE"
-                              ? "ausente"
-                              : "cancelado"
-                      }
-                    >
-                      {String(turno.estado)}
-                    </DataBadge>
+                    <div className="flex min-w-[190px] items-center gap-2">
+                      <select
+                        value={normalizeEstado(String(turno.estado))}
+                        onChange={(event) => onEstadoSelect(turno, event.target.value as TurnoEstado)}
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-medium outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                      >
+                        {getEstadoOptions(turno).map((option) => (
+                          <option key={option.value} value={option.value} disabled={option.disabled}>
+                            {option.value}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                      <DataBadge kind={getEstadoKind(String(turno.estado))}>{String(turno.estado)}</DataBadge>
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      <ActionButton
-                        tone="slate"
-                        icon={<Eye className="mr-1 h-3.5 w-3.5" />}
-                        label="Detalle"
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2.5"
                         onClick={() => setTurnoDetalleId(turno.id)}
-                      />
-                      <ActionButton
-                        tone="teal"
-                        icon={<CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
-                        label="Atendido"
-                        onClick={() => updateEstado(turno.id, "atender")}
-                        disabled={!canMarkAsAtendido(turno)}
-                        title={canMarkAsAtendido(turno) ? "Marcar como atendido" : "Disponible al pasar horario"}
-                      />
-                      <ActionButton
-                        tone="amber"
-                        icon={<CircleOff className="mr-1 h-3.5 w-3.5" />}
-                        label="Ausente"
-                        onClick={() => updateEstado(turno.id, "ausente")}
-                        disabled={!canMarkAsAusente(turno)}
-                        title={canMarkAsAusente(turno) ? "Marcar como ausente" : "Disponible al pasar horario"}
-                      />
-                      <ActionButton
-                        tone="red"
-                        icon={<XCircle className="mr-1 h-3.5 w-3.5" />}
-                        label="Cancelar"
-                        onClick={() => updateEstado(turno.id, "cancelar")}
-                        disabled={
-                          String(turno.estado).toUpperCase() === "CANCELADO" ||
-                          String(turno.estado).toUpperCase() === "ATENDIDO"
-                        }
-                      />
+                      >
+                        <Eye className="mr-1 h-3.5 w-3.5" />
+                        Detalle
+                      </Button>
+                      {role === "admin" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8border-rose-200 px-2.5 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                          onClick={() => eliminarTurno(turno.id)}
+                        >
+                          <Trash2 className="" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </motion.tr>
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </CardContent>
       </Card>

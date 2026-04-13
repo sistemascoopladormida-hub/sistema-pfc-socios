@@ -312,3 +312,55 @@ export async function PUT(request: Request, { params }: Params) {
     return NextResponse.json({ success: false, error: String(error) });
   }
 }
+
+export async function DELETE(_: Request, { params }: Params) {
+  const pool = await getSqlConnectionPfc();
+  const transaction = new sql.Transaction(pool);
+  let started = false;
+
+  try {
+    const turnoId = parsePositiveInt(params.id);
+    if (!turnoId) {
+      return NextResponse.json({ success: false, error: "id de turno invalido" });
+    }
+
+    const turnoResult = await pool.request().input("id", sql.Int, turnoId).query(`
+      SELECT TOP 1 id
+      FROM turnos
+      WHERE id = @id
+    `);
+    if (!turnoResult.recordset[0]) {
+      return NextResponse.json({ success: false, error: "Turno no encontrado" });
+    }
+
+    await transaction.begin();
+    started = true;
+
+    await new sql.Request(transaction).input("turno_id", sql.Int, turnoId).query(`
+      DELETE FROM historial_atencion
+      WHERE turno_id = @turno_id
+    `);
+
+    await new sql.Request(transaction).input("id", sql.Int, turnoId).query(`
+      DELETE FROM turnos
+      WHERE id = @id
+    `);
+
+    await transaction.commit();
+    started = false;
+
+    return NextResponse.json({
+      success: true,
+      message: "Turno eliminado correctamente",
+    });
+  } catch (error) {
+    if (started) {
+      try {
+        await transaction.rollback();
+      } catch {
+        // no-op
+      }
+    }
+    return NextResponse.json({ success: false, error: String(error) });
+  }
+}

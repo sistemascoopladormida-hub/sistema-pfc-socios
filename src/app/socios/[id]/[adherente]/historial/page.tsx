@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { CargaManualModal } from "@/components/turnos/CargaManualModal";
 import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
@@ -166,6 +167,7 @@ export default function HistorialSocioPage() {
   const [isCargaManualOpen, setIsCargaManualOpen] = useState(false);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
   const canManualLoad = role === "admin";
+  const canDeleteTurno = role === "admin";
   const podologiaResumen = useMemo(() => {
     const categoriaNormalizada = normalizeText(categoria);
     const isPlus = categoriaNormalizada.includes("PLUS");
@@ -268,6 +270,27 @@ export default function HistorialSocioPage() {
     loadData();
     return () => controller.abort();
   }, [adherente, codSoc, reloadToken]);
+
+  async function handleDeleteTurno(turnoId: number) {
+    if (!canDeleteTurno) return;
+
+    const confirmar = window.confirm(
+      "¿Deseas eliminar este turno? Esta acción eliminará también su historial asociado y no se puede deshacer."
+    );
+    if (!confirmar) return;
+
+    try {
+      const response = await fetch(`/api/turnos/${turnoId}`, { method: "DELETE" });
+      const data = (await response.json()) as { success: boolean; error?: string; message?: string };
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? "No se pudo eliminar el turno");
+      }
+      toast.success(data.message ?? "Turno eliminado");
+      setReloadToken((prev) => prev + 1);
+    } catch (deleteError) {
+      toast.error(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el turno");
+    }
+  }
 
   if (loading) {
     return <Loading label="Cargando historial completo..." />;
@@ -492,13 +515,25 @@ export default function HistorialSocioPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTurnoDetalleId(Number(item.turno_id))}
-                      >
-                        Ver detalle
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setTurnoDetalleId(Number(item.turno_id))}
+                        >
+                          Ver detalle
+                        </Button>
+                        {canDeleteTurno ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-rose-200 px-2.5 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                            onClick={() => handleDeleteTurno(Number(item.turno_id))}
+                          >
+                            <Trash2 className="" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                     {/* <TableCell>
                       {item.estado_atencion ? (

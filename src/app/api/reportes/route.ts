@@ -26,97 +26,65 @@ type EstadisticaRow = {
   sesiones_utilizadas: number | string;
   promedio_mensual: number | string;
 };
+type TotalRow = {
+  total: number | string;
+};
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const ANIO_EN_CURSO = new Date().getFullYear();
+
 export async function GET() {
   try {
     const billingPool = await getSqlConnection();
     const pfcPool = await getSqlConnectionPfc();
 
-    const [
-      prestacionesUsoMesResult,
-      prestacionesUsoAnioResult,
-      prestacionesUsoHistoricoResult,
-      consumoSociosMesResult,
-      consumoSociosAnioResult,
-      consumoSociosHistoricoResult,
-      estadisticasResult,
-    ] = await Promise.all([
-      pfcPool.request().query(`
-        SELECT TOP 10
+    const [prestacionesUsoAnioResult, consumoSociosAnioResult, totalSesionesAnioResult, totalSociosAnioResult, estadisticasResult] = await Promise.all([
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
+        SELECT
           p.nombre,
           COUNT(*) as sesiones
         FROM turnos t
         JOIN prestaciones p ON p.id = t.prestacion_id
         WHERE
           t.estado = 'ATENDIDO'
-          AND MONTH(t.fecha) = MONTH(GETDATE())
-          AND YEAR(t.fecha) = YEAR(GETDATE())
+          AND YEAR(t.fecha) = @anio
         GROUP BY p.nombre
         ORDER BY sesiones DESC
       `),
-      pfcPool.request().query(`
-        SELECT TOP 10
-          p.nombre,
-          COUNT(*) as sesiones
-        FROM turnos t
-        JOIN prestaciones p ON p.id = t.prestacion_id
-        WHERE
-          t.estado = 'ATENDIDO'
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-        GROUP BY p.nombre
-        ORDER BY sesiones DESC
-      `),
-      pfcPool.request().query(`
-        SELECT TOP 10
-          p.nombre,
-          COUNT(*) as sesiones
-        FROM turnos t
-        JOIN prestaciones p ON p.id = t.prestacion_id
-        WHERE t.estado = 'ATENDIDO'
-        GROUP BY p.nombre
-        ORDER BY sesiones DESC
-      `),
-      pfcPool.request().query(`
-        SELECT TOP 8
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
+        SELECT
           t.cod_soc,
           t.adherente_codigo,
           COUNT(*) as sesiones
         FROM turnos t
         WHERE
           t.estado = 'ATENDIDO'
-          AND MONTH(t.fecha) = MONTH(GETDATE())
-          AND YEAR(t.fecha) = YEAR(GETDATE())
+          AND YEAR(t.fecha) = @anio
         GROUP BY t.cod_soc, t.adherente_codigo
         ORDER BY sesiones DESC
       `),
-      pfcPool.request().query(`
-        SELECT TOP 8
-          t.cod_soc,
-          t.adherente_codigo,
-          COUNT(*) as sesiones
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
+        SELECT COUNT(*) as total
         FROM turnos t
         WHERE
           t.estado = 'ATENDIDO'
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-        GROUP BY t.cod_soc, t.adherente_codigo
-        ORDER BY sesiones DESC
+          AND YEAR(t.fecha) = @anio
       `),
-      pfcPool.request().query(`
-        SELECT TOP 8
-          t.cod_soc,
-          t.adherente_codigo,
-          COUNT(*) as sesiones
-        FROM turnos t
-        WHERE t.estado = 'ATENDIDO'
-        GROUP BY t.cod_soc, t.adherente_codigo
-        ORDER BY sesiones DESC
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
+        SELECT COUNT(*) as total
+        FROM (
+          SELECT DISTINCT t.cod_soc, t.adherente_codigo
+          FROM turnos t
+          WHERE
+            t.estado = 'ATENDIDO'
+            AND YEAR(t.fecha) = @anio
+        ) x
       `),
-      pfcPool.request().query(`
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
         SELECT
           p.nombre as prestacion,
           COUNT(*) as sesiones_utilizadas,
@@ -125,39 +93,19 @@ export async function GET() {
         JOIN prestaciones p ON p.id = t.prestacion_id
         WHERE
           t.estado = 'ATENDIDO'
-          AND YEAR(t.fecha) = YEAR(GETDATE())
+          AND YEAR(t.fecha) = @anio
         GROUP BY p.nombre
         ORDER BY sesiones_utilizadas DESC
       `),
     ]);
 
-    const prestacionesUsoMes = (prestacionesUsoMesResult.recordset as PrestacionUsoRow[]).map((row) => ({
-      nombre: row.nombre,
-      sesiones: toNumber(row.sesiones),
-    }));
     const prestacionesUsoAnio = (prestacionesUsoAnioResult.recordset as PrestacionUsoRow[]).map((row) => ({
       nombre: row.nombre,
       sesiones: toNumber(row.sesiones),
     }));
-    const prestacionesUsoHistorico = (
-      prestacionesUsoHistoricoResult.recordset as PrestacionUsoRow[]
-    ).map((row) => ({
-      nombre: row.nombre,
-      sesiones: toNumber(row.sesiones),
-    }));
-    const prestacionesUso =
-      prestacionesUsoMes.length > 0
-        ? prestacionesUsoMes
-        : prestacionesUsoAnio.length > 0
-          ? prestacionesUsoAnio
-          : prestacionesUsoHistorico;
+    const prestacionesUso = prestacionesUsoAnio;
 
-    const consumoRows =
-      (consumoSociosMesResult.recordset as ConsumoSocioRow[]).length > 0
-        ? (consumoSociosMesResult.recordset as ConsumoSocioRow[])
-        : (consumoSociosAnioResult.recordset as ConsumoSocioRow[]).length > 0
-          ? (consumoSociosAnioResult.recordset as ConsumoSocioRow[])
-          : (consumoSociosHistoricoResult.recordset as ConsumoSocioRow[]);
+    const consumoRows = consumoSociosAnioResult.recordset as ConsumoSocioRow[];
     const codSocList = [
       ...new Set(consumoRows.map((item) => Number(item.cod_soc)).filter((value) => Number.isInteger(value))),
     ];
@@ -202,18 +150,15 @@ export async function GET() {
       estado: "Activo",
     }));
 
-    const prestacionesTotalesMes = prestacionesUso.reduce(
-      (acc, item) => acc + Number(item.sesiones ?? 0),
-      0
-    );
-    const sociosQueUsaronPfc = consumoSocios.length;
-    const promedioUsoSocio = sociosQueUsaronPfc > 0 ? prestacionesTotalesMes / sociosQueUsaronPfc : 0;
+    const prestacionesTotalesAnio = toNumber((totalSesionesAnioResult.recordset[0] as TotalRow | undefined)?.total);
+    const sociosQueUsaronPfc = toNumber((totalSociosAnioResult.recordset[0] as TotalRow | undefined)?.total);
+    const promedioUsoSocio = sociosQueUsaronPfc > 0 ? prestacionesTotalesAnio / sociosQueUsaronPfc : 0;
 
     return NextResponse.json({
       success: true,
       data: {
         indicadores: {
-          prestaciones_totales_mes: prestacionesTotalesMes,
+          prestaciones_totales_mes: prestacionesTotalesAnio,
           socios_que_usaron_pfc: sociosQueUsaronPfc,
           promedio_uso_por_socio: Number(promedioUsoSocio.toFixed(1)),
         },

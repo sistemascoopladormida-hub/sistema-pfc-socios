@@ -96,6 +96,18 @@ export default function NuevoTurnoPage() {
     () => profesionales.find((item) => Number(item.id) === selectedProfesionalId) ?? null,
     [profesionales, selectedProfesionalId]
   );
+  const selectedPrestacion = useMemo(
+    () => prestaciones.find((item) => Number(item.id) === selectedPrestacionId) ?? null,
+    [prestaciones, selectedPrestacionId]
+  );
+  const isPrestacionTraslado = useMemo(() => {
+    const nombre = String(selectedPrestacion?.nombre ?? "")
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    return nombre.includes("TRASLADO");
+  }, [selectedPrestacion]);
   const coberturaPrestacionSeleccionada = useMemo(
     () =>
       coberturaPaciente.find((item) => Number(item.prestacion_id) === selectedPrestacionId) ?? null,
@@ -210,6 +222,10 @@ export default function NuevoTurnoPage() {
 
   useEffect(() => {
     async function loadDisponibilidad() {
+      if (isPrestacionTraslado) {
+        setDisponibles([]);
+        return;
+      }
       if (!Number.isInteger(selectedProfesionalId) || selectedProfesionalId <= 0 || !form.fecha) {
         setDisponibles([]);
         setForm((prev) => ({ ...prev, hora: "" }));
@@ -230,10 +246,14 @@ export default function NuevoTurnoPage() {
     }
 
     loadDisponibilidad();
-  }, [selectedProfesionalId, form.fecha]);
+  }, [selectedProfesionalId, form.fecha, isPrestacionTraslado]);
 
   useEffect(() => {
     async function loadFechasByProfesional() {
+      if (isPrestacionTraslado) {
+        setFechasDisponibles([]);
+        return;
+      }
       if (!Number.isInteger(selectedProfesionalId) || selectedProfesionalId <= 0) {
         setFechasDisponibles([]);
         setForm((prev) => ({ ...prev, fecha: "", hora: "" }));
@@ -270,7 +290,7 @@ export default function NuevoTurnoPage() {
     }
 
     loadFechasByProfesional();
-  }, [selectedProfesionalId]);
+  }, [selectedProfesionalId, isPrestacionTraslado]);
 
   useEffect(() => {
     if (!showSocioResults) return;
@@ -712,41 +732,59 @@ export default function NuevoTurnoPage() {
 
         <label className="grid gap-1 text-sm">
           <span>Fecha</span>
-          <select
-            className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-            value={form.fecha}
-            onChange={(event) => setForm((prev) => ({ ...prev, fecha: event.target.value, hora: "" }))}
-            disabled={!form.profesional_id || fechasDisponibles.length === 0}
-          >
-            <option value="">
-              {!form.profesional_id
-                ? "Selecciona profesional"
-                : fechasDisponibles.length === 0
-                  ? "Sin dias habilitados"
-                  : "Seleccionar fecha"}
-            </option>
-            {fechasDisponibles.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+          {isPrestacionTraslado ? (
+            <Input
+              type="date"
+              value={form.fecha}
+              onChange={(event) => setForm((prev) => ({ ...prev, fecha: event.target.value }))}
+              disabled={!form.profesional_id}
+            />
+          ) : (
+            <select
+              className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+              value={form.fecha}
+              onChange={(event) => setForm((prev) => ({ ...prev, fecha: event.target.value, hora: "" }))}
+              disabled={!form.profesional_id || fechasDisponibles.length === 0}
+            >
+              <option value="">
+                {!form.profesional_id
+                  ? "Selecciona profesional"
+                  : fechasDisponibles.length === 0
+                    ? "Sin dias habilitados"
+                    : "Seleccionar fecha"}
               </option>
-            ))}
-          </select>
+              {fechasDisponibles.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="grid gap-1 text-sm">
-          <span>Horario disponible</span>
-          <select
-            className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-            value={form.hora}
-            onChange={(event) => setForm((prev) => ({ ...prev, hora: event.target.value }))}
-          >
-            <option value="">Seleccionar</option>
-            {disponibles.map((hora) => (
-              <option key={hora} value={hora}>
-                {hora}
-              </option>
-            ))}
-          </select>
+          <span>{isPrestacionTraslado ? "Hora" : "Horario disponible"}</span>
+          {isPrestacionTraslado ? (
+            <Input
+              type="time"
+              value={form.hora}
+              onChange={(event) => setForm((prev) => ({ ...prev, hora: event.target.value }))}
+              disabled={!form.profesional_id}
+            />
+          ) : (
+            <select
+              className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+              value={form.hora}
+              onChange={(event) => setForm((prev) => ({ ...prev, hora: event.target.value }))}
+            >
+              <option value="">Seleccionar</option>
+              {disponibles.map((hora) => (
+                <option key={hora} value={hora}>
+                  {hora}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="grid gap-1 text-sm sm:col-span-2">

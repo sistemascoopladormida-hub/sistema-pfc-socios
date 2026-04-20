@@ -52,6 +52,7 @@ type ReportesResponse = {
 
 export default function ReportesPage() {
   const { role } = useUser();
+  const anioEnCurso = new Date().getFullYear();
   const [reportes, setReportes] = useState<NonNullable<ReportesResponse["data"]> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,14 +129,14 @@ export default function ReportesPage() {
       <div className="space-y-1">
         <h2 className="text-2xl font-semibold text-slate-900">Reportes del Sistema PFC</h2>
         <p className="text-sm text-slate-600">
-          Panel de analisis de uso del plan para seguimiento directivo.
+          Panel de analisis anual ({anioEnCurso}) del uso del plan para seguimiento directivo.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="bg-white shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-slate-600">Prestaciones totales registradas</CardTitle>
+            <CardTitle className="text-sm text-slate-600">Prestaciones totales del año en curso</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-slate-900">
@@ -147,7 +148,7 @@ export default function ReportesPage() {
         <Card className="bg-white shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-slate-600">
-              Socios que utilizaron el PFC
+              Socios que utilizaron el PFC en el año
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -159,7 +160,7 @@ export default function ReportesPage() {
 
         <Card className="bg-white shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-slate-600">Promedio de uso por socio</CardTitle>
+            <CardTitle className="text-sm text-slate-600">Promedio anual de uso por socio</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-slate-900">
@@ -172,7 +173,7 @@ export default function ReportesPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Prestaciones mas utilizadas</CardTitle>
+            <CardTitle>Prestaciones más utilizadas ({anioEnCurso})</CardTitle>
           </CardHeader>
           <CardContent className="h-80">
             {reportes.prestaciones_uso.length > 0 ? (
@@ -193,7 +194,7 @@ export default function ReportesPage() {
 
         <Card className="bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Consumo de prestaciones por socio</CardTitle>
+            <CardTitle>Consumo anual de prestaciones por socio</CardTitle>
           </CardHeader>
           <CardContent className="h-80">
             {reportes.consumo_socios.length > 0 ? (
@@ -226,7 +227,7 @@ export default function ReportesPage() {
 
       <Card className="bg-white shadow-sm">
         <CardHeader>
-          <CardTitle>Estadisticas generales</CardTitle>
+          <CardTitle>Estadísticas generales anuales</CardTitle>
         </CardHeader>
         <CardContent>
           {reportes.estadisticas.length === 0 ? (

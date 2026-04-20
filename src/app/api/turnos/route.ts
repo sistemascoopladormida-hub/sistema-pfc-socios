@@ -121,6 +121,14 @@ function normalizeCategoria(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function normalizeSearchText(value: string) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function categoriaPlanLabel(value: string) {
   const normalized = normalizeCategoria(value);
   if (normalized.includes("BASICA")) return "Plan Básico";
@@ -565,58 +573,71 @@ export async function POST(request: Request) {
       });
     }
 
-    const agendaResult = await pool
+    const prestacionMetaValidacionResult = await pool
       .request()
-      .input("profesional", sql.Int, payload.profesionalId)
-      .input("dia_semana", sql.Int, diaSemana)
-      .input("dia_semana_texto", sql.VarChar(20), diaSemanaTexto)
+      .input("prestacion", sql.Int, payload.prestacionId)
       .query(`
-        SELECT hora_inicio, hora_fin
-        FROM agenda_profesional
-        WHERE profesional_id = @profesional
-          AND (
-            TRY_CAST(dia_semana as int) = @dia_semana
-            OR LTRIM(RTRIM(CAST(dia_semana as varchar(20)))) COLLATE Latin1_General_CI_AI
-               = @dia_semana_texto COLLATE Latin1_General_CI_AI
-          )
+        SELECT TOP 1 nombre
+        FROM prestaciones
+        WHERE id = @prestacion
       `);
+    const nombrePrestacionValidacion = String(prestacionMetaValidacionResult.recordset[0]?.nombre ?? "");
+    const isPrestacionTraslado = normalizeSearchText(nombrePrestacionValidacion).includes("TRASLADO");
 
-    const agenda = agendaResult.recordset as AgendaRow[];
-    if (agenda.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: "El profesional no atiende en ese dia",
-      });
-    }
+    if (!isPrestacionTraslado) {
+      const agendaResult = await pool
+        .request()
+        .input("profesional", sql.Int, payload.profesionalId)
+        .input("dia_semana", sql.Int, diaSemana)
+        .input("dia_semana_texto", sql.VarChar(20), diaSemanaTexto)
+        .query(`
+          SELECT hora_inicio, hora_fin
+          FROM agenda_profesional
+          WHERE profesional_id = @profesional
+            AND (
+              TRY_CAST(dia_semana as int) = @dia_semana
+              OR LTRIM(RTRIM(CAST(dia_semana as varchar(20)))) COLLATE Latin1_General_CI_AI
+                 = @dia_semana_texto COLLATE Latin1_General_CI_AI
+            )
+        `);
 
-    const horarioValido = validarHorarioEnAgenda(payload.hora, agenda, profesional.duracion_turno);
-    if (!horarioValido) {
-      return NextResponse.json({
-        success: false,
-        error: "El horario no esta dentro de la agenda del profesional",
-      });
-    }
+      const agenda = agendaResult.recordset as AgendaRow[];
+      if (agenda.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: "El profesional no atiende en ese dia",
+        });
+      }
 
-    const cupoMensualResult = await pool
-      .request()
-      .input("profesional", sql.Int, payload.profesionalId)
-      .input("fecha", sql.Date, payload.fecha)
-      .query(`
-        SELECT COUNT(*) as total
-        FROM turnos
-        WHERE profesional_id = @profesional
-          AND MONTH(fecha) = MONTH(@fecha)
-          AND YEAR(fecha) = YEAR(@fecha)
-          AND estado IN ('RESERVADO','ATENDIDO')
-      `);
+      const horarioValido = validarHorarioEnAgenda(payload.hora, agenda, profesional.duracion_turno);
+      if (!horarioValido) {
+        return NextResponse.json({
+          success: false,
+          error: "El horario no esta dentro de la agenda del profesional",
+        });
+      }
 
-    const turnosDelMes = Number(cupoMensualResult.recordset[0]?.total ?? 0);
-    const cupoMensual = Number(profesional.cupo_mensual ?? 0);
-    if (cupoMensual > 0 && turnosDelMes >= cupoMensual) {
-      return NextResponse.json({
-        success: false,
-        error: "El profesional alcanzo el cupo mensual",
-      });
+      const cupoMensualResult = await pool
+        .request()
+        .input("profesional", sql.Int, payload.profesionalId)
+        .input("fecha", sql.Date, payload.fecha)
+        .query(`
+          SELECT COUNT(*) as total
+          FROM turnos
+          WHERE profesional_id = @profesional
+            AND MONTH(fecha) = MONTH(@fecha)
+            AND YEAR(fecha) = YEAR(@fecha)
+            AND estado IN ('RESERVADO','ATENDIDO')
+        `);
+
+      const turnosDelMes = Number(cupoMensualResult.recordset[0]?.total ?? 0);
+      const cupoMensual = Number(profesional.cupo_mensual ?? 0);
+      if (cupoMensual > 0 && turnosDelMes >= cupoMensual) {
+        return NextResponse.json({
+          success: false,
+          error: "El profesional alcanzo el cupo mensual",
+        });
+      }
     }
 
     const dobleTurnoResult = await pool

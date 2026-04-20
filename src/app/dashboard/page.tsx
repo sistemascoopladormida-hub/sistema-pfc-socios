@@ -76,13 +76,13 @@ const estadoLabel: Record<DashboardEstadoTurno, string> = {
 };
 
 function labelPrestacionesPeriodo(periodo: DashboardData["prestaciones_periodo"]) {
-  if (periodo === "mes") return "Mes actual (atenciones atendidas)";
   if (periodo === "anio") return "Año en curso (atenciones atendidas)";
-  return "Histórico completo (atenciones atendidas)";
+  return "Periodo no configurado";
 }
 
 export default function DashboardPage() {
   const { role } = useUser();
+  const anioEnCurso = new Date().getFullYear();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,9 +206,9 @@ export default function DashboardPage() {
             tone="teal"
           />
           <MetricCard
-            label="Turnos del día"
+            label="Turnos del año"
             value={dashboardData.turnos_hoy}
-            description="Turnos reservados para hoy."
+            description={`Turnos registrados en ${anioEnCurso}.`}
             icon={Calendar}
             tone="blue"
           />
@@ -222,7 +222,7 @@ export default function DashboardPage() {
           <MetricCard
             label="Prestaciones registradas"
             value={dashboardData.prestaciones_mes}
-            description="Atenciones (mes actual, o periodo con datos)."
+            description={`Atenciones atendidas en ${anioEnCurso}.`}
             icon={HeartPulse}
             tone="teal"
           />
@@ -268,7 +268,7 @@ export default function DashboardPage() {
           <CardHeader className="space-y-1">
             <CardTitle>Prestaciones más utilizadas</CardTitle>
             <p className="text-sm text-slate-600">
-              Gráfico: las 10 prestaciones con más atenciones en el periodo (
+              Gráfico anual {anioEnCurso}: las 10 prestaciones con más atenciones (
               {labelPrestacionesPeriodo(dashboardData.prestaciones_periodo)}). El listado debajo incluye el catálogo
               completo.
             </p>

@@ -19,6 +19,7 @@ type PrestacionTopRow = {
 
 /** Cantidad de prestaciones con más atenciones que se envían al gráfico circular. */
 const PRESTACIONES_TOP_GRAFICO = 10;
+const ANIO_EN_CURSO = new Date().getFullYear();
 
 type TurnoRecienteRow = {
   id: number;
@@ -61,40 +62,25 @@ export async function GET() {
     ]);
 
     const [
-      turnosHoyResult,
+      turnosAnioResult,
       profesionalesActivosResult,
-      prestacionesMesActualResult,
       prestacionesAnioResult,
-      prestacionesHistoricoResult,
       turnosRecientesResult,
     ] = await Promise.all([
-      pfcPool.request().query(`
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
         SELECT COUNT(*) as total
         FROM turnos
-        WHERE fecha = CAST(GETDATE() AS DATE)
-          AND estado = 'RESERVADO'
+        WHERE YEAR(fecha) = @anio
       `),
       pfcPool.request().query(`
         SELECT COUNT(DISTINCT profesional_id) as total
         FROM agenda_profesional
       `),
-      pfcPool.request().query(`
+      pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
         SELECT COUNT(*) as total
         FROM turnos
         WHERE estado = 'ATENDIDO'
-          AND MONTH(fecha) = MONTH(GETDATE())
-          AND YEAR(fecha) = YEAR(GETDATE())
-      `),
-      pfcPool.request().query(`
-        SELECT COUNT(*) as total
-        FROM turnos
-        WHERE estado = 'ATENDIDO'
-          AND YEAR(fecha) = YEAR(GETDATE())
-      `),
-      pfcPool.request().query(`
-        SELECT COUNT(*) as total
-        FROM turnos
-        WHERE estado = 'ATENDIDO'
+          AND YEAR(fecha) = @anio
       `),
       pfcPool.request().query(`
         SELECT TOP 5
@@ -162,53 +148,22 @@ export async function GET() {
     const hijosMayores18 = resumenSocios.hijosMayores18;
     const hijosMenores18 = resumenSocios.hijosMenores18;
     const adherentesBeneficioTitular = resumenSocios.adherentesBeneficioTitular;
-    const turnosHoy = toNumber((turnosHoyResult.recordset[0] as TotalRow | undefined)?.total);
+    const turnosHoy = toNumber((turnosAnioResult.recordset[0] as TotalRow | undefined)?.total);
     const profesionalesActivos = toNumber(
       (profesionalesActivosResult.recordset[0] as TotalRow | undefined)?.total
     );
-    const prestacionesMesActual = toNumber(
-      (prestacionesMesActualResult.recordset[0] as TotalRow | undefined)?.total
-    );
     const prestacionesAnio = toNumber((prestacionesAnioResult.recordset[0] as TotalRow | undefined)?.total);
-    const prestacionesHistorico = toNumber(
-      (prestacionesHistoricoResult.recordset[0] as TotalRow | undefined)?.total
-    );
-    const prestacionesMes =
-      prestacionesMesActual > 0
-        ? prestacionesMesActual
-        : prestacionesAnio > 0
-          ? prestacionesAnio
-          : prestacionesHistorico;
+    const prestacionesMes = prestacionesAnio;
+    const periodoPrestacionesUso: "anio" = "anio";
 
-    /** Misma lógica que el total de prestaciones del mes: mes actual si hay datos, si no año, si no histórico. */
-    const periodoPrestacionesUso: "mes" | "anio" | "historico" =
-      prestacionesMesActual > 0 ? "mes" : prestacionesAnio > 0 ? "anio" : "historico";
-
-    const joinTurnosAtendidos =
-      periodoPrestacionesUso === "mes"
-        ? `
-        LEFT JOIN turnos t ON t.prestacion_id = p.id
-          AND t.estado = 'ATENDIDO'
-          AND MONTH(t.fecha) = MONTH(GETDATE())
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-      `
-        : periodoPrestacionesUso === "anio"
-          ? `
-        LEFT JOIN turnos t ON t.prestacion_id = p.id
-          AND t.estado = 'ATENDIDO'
-          AND YEAR(t.fecha) = YEAR(GETDATE())
-      `
-          : `
-        LEFT JOIN turnos t ON t.prestacion_id = p.id
-          AND t.estado = 'ATENDIDO'
-      `;
-
-    const prestacionesUsoResult = await pfcPool.request().query(`
+    const prestacionesUsoResult = await pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
       SELECT
         p.nombre,
         COUNT(t.id) AS total
       FROM prestaciones p
-      ${joinTurnosAtendidos}
+      LEFT JOIN turnos t ON t.prestacion_id = p.id
+        AND t.estado = 'ATENDIDO'
+        AND YEAR(t.fecha) = @anio
       GROUP BY p.id, p.nombre
       ORDER BY total DESC, p.nombre ASC
     `);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Calendar, HeartPulse, Stethoscope, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
@@ -167,14 +168,22 @@ export default function DashboardPage() {
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <Card className="bg-white">
-          <CardContent className="flex items-center gap-4 py-8">
-            <HeartPulse className="h-10 w-10 text-pfc-600" />
-            <div className="space-y-1">
-              <h2 className="font-display text-3xl text-pfcText-primary">Visión general del sistema PFC</h2>
-              <p className="text-sm text-pfcText-secondary">
-                Métricas clave para recepción y directivos con foco en cobertura y operación diaria.
-              </p>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-8">
+            <div className="flex items-center gap-4">
+              <HeartPulse className="h-10 w-10 text-pfc-600" />
+              <div className="space-y-1">
+                <h2 className="font-display text-3xl text-pfcText-primary">Visión general del sistema PFC</h2>
+                <p className="text-sm text-pfcText-secondary">
+                  Métricas clave para recepción y directivos con foco en cobertura y operación diaria.
+                </p>
+              </div>
             </div>
+            <Link href="/turnos/nuevo">
+              <span className="inline-flex h-10 items-center rounded-lg bg-[#0D6E5A] px-4 text-sm font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B5B4B]">
+                <Calendar className="mr-2 h-4 w-4" />
+                Crear turno
+              </span>
+            </Link>
           </CardContent>
         </Card>
       </motion.div>

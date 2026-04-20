@@ -527,6 +527,20 @@ export default function HistorialSocioPage() {
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Historial de Turnos</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/turnos/nuevo?cod_soc=${encodeURIComponent(String(codSoc))}&adherente=${encodeURIComponent(
+                String(adherente)
+              )}&nombre=${encodeURIComponent(paciente?.nombre ?? "Paciente")}&categoria=${encodeURIComponent(categoria ?? "")}`}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                className="border-teal-600 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+              >
+                <PlusCircle className="mr-1 size-4 shrink-0" />
+                Crear turno
+              </Button>
+            </Link>
             <Button
               type="button"
               variant="outline"

@@ -9,7 +9,7 @@ function isPublicPath(pathname: string) {
 
 function hasValidRoleCookie(request: NextRequest) {
   const role = request.cookies.get("rol")?.value;
-  return role === "admin" || role === "directivo";
+  return role === "admin" || role === "directivo" || role === "ortopedia_admin";
 }
 
 export function middleware(request: NextRequest) {
@@ -17,7 +17,9 @@ export function middleware(request: NextRequest) {
   const loggedIn = hasValidRoleCookie(request);
 
   if (isPublicPath(pathname) && loggedIn) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const role = request.cookies.get("rol")?.value;
+    const destination = role === "ortopedia_admin" ? "/ortopedia" : "/dashboard";
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
   if (!isPublicPath(pathname) && !loggedIn) {

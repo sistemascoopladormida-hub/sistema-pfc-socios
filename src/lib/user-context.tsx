@@ -55,16 +55,19 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "prestaciones",
   ],
   directivo: ["dashboard", "reportes"],
+  ortopedia_admin: ["ortopedia"],
 };
 
 export const roleLabel: Record<UserRole, string> = {
   admin: "Administrador",
   directivo: "Directivo",
+  ortopedia_admin: "Admin Ortopedia",
 };
 
 export const simulatedUserByRole: Record<UserRole, string> = {
   admin: ROLE_USERS.admin,
   directivo: ROLE_USERS.directivo,
+  ortopedia_admin: ROLE_USERS.ortopedia_admin,
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -79,7 +82,11 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
   const [specialistUsuario, setSpecialistUsuario] = useState<string>(specialistAccounts[0].usuario);
   useEffect(() => {
     const storedRole = localStorage.getItem("rol");
-    if (storedRole === ROLES.ADMIN || storedRole === ROLES.DIRECTIVO) {
+    if (
+      storedRole === ROLES.ADMIN ||
+      storedRole === ROLES.DIRECTIVO ||
+      storedRole === ROLES.ORTOPEDIA_ADMIN
+    ) {
       setRole(storedRole);
       return;
     }
@@ -98,7 +105,11 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
   useEffect(() => {
     const syncRole = () => {
       const storedRole = localStorage.getItem("rol");
-      if (storedRole === ROLES.ADMIN || storedRole === ROLES.DIRECTIVO) {
+      if (
+        storedRole === ROLES.ADMIN ||
+        storedRole === ROLES.DIRECTIVO ||
+        storedRole === ROLES.ORTOPEDIA_ADMIN
+      ) {
         setRole(storedRole);
       }
     };

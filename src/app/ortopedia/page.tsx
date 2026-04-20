@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { PlusCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Edit3, PlusCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,8 @@ type ApiResponse = {
   error?: string;
 };
 
+type ElementoModalMode = "create" | "edit";
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -85,9 +87,14 @@ export default function OrtopediaPage() {
   const [elementos, setElementos] = useState<Elemento[]>([]);
   const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
 
-  const [nuevoNombre, setNuevoNombre] = useState("");
-  const [nuevoDescripcion, setNuevoDescripcion] = useState("");
-  const [nuevoStock, setNuevoStock] = useState("0");
+  const [elementoModalOpen, setElementoModalOpen] = useState(false);
+  const [elementoModalMode, setElementoModalMode] = useState<ElementoModalMode>("create");
+  const [elementoEditId, setElementoEditId] = useState<number | null>(null);
+  const [elementoNombre, setElementoNombre] = useState("");
+  const [elementoDescripcion, setElementoDescripcion] = useState("");
+  const [elementoStock, setElementoStock] = useState("0");
+  const [elementoActivo, setElementoActivo] = useState(true);
+  const [guardandoElemento, setGuardandoElemento] = useState(false);
 
   const [socioQuery, setSocioQuery] = useState("");
   const [socioResults, setSocioResults] = useState<SocioSearchRow[]>([]);
@@ -101,6 +108,7 @@ export default function OrtopediaPage() {
   const [renovarObs, setRenovarObs] = useState("");
   const [certificadoFile, setCertificadoFile] = useState<File | null>(null);
   const [renovando, setRenovando] = useState(false);
+  const socioSearchRef = useRef<HTMLDivElement | null>(null);
 
   const elementosDisponibles = useMemo(
     () => elementos.filter((item) => item.activo && Number(item.stock_disponible) > 0),
@@ -124,6 +132,20 @@ export default function OrtopediaPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!showSocioResults) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (socioSearchRef.current?.contains(target)) return;
+      setShowSocioResults(false);
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSocioResults]);
 
   useEffect(() => {
     if (!showSocioResults) return;
@@ -154,9 +176,29 @@ export default function OrtopediaPage() {
     return () => window.clearTimeout(timer);
   }, [socioQuery, showSocioResults]);
 
-  async function handleCrearElemento() {
-    const stock = Number(nuevoStock);
-    if (!nuevoNombre.trim()) {
+  function abrirModalCrearElemento() {
+    setElementoModalMode("create");
+    setElementoEditId(null);
+    setElementoNombre("");
+    setElementoDescripcion("");
+    setElementoStock("0");
+    setElementoActivo(true);
+    setElementoModalOpen(true);
+  }
+
+  function abrirModalEditarElemento(item: Elemento) {
+    setElementoModalMode("edit");
+    setElementoEditId(item.id);
+    setElementoNombre(item.nombre);
+    setElementoDescripcion(item.descripcion ?? "");
+    setElementoStock(String(item.stock_total));
+    setElementoActivo(Boolean(item.activo));
+    setElementoModalOpen(true);
+  }
+
+  async function handleGuardarElemento() {
+    const stock = Number(elementoStock);
+    if (!elementoNombre.trim()) {
       toast.error("Ingresa nombre del elemento");
       return;
     }
@@ -165,25 +207,48 @@ export default function OrtopediaPage() {
       return;
     }
 
-    const response = await fetch("/api/ortopedia", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre: nuevoNombre,
-        descripcion: nuevoDescripcion,
-        stock_total: stock,
-      }),
-    });
+    try {
+      setGuardandoElemento(true);
+      const isCreate = elementoModalMode === "create";
+      const endpoint = isCreate ? "/api/ortopedia" : `/api/ortopedia/${elementoEditId}`;
+      const method = isCreate ? "POST" : "PUT";
+      const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: elementoNombre,
+          descripcion: elementoDescripcion,
+          stock_total: stock,
+          activo: elementoActivo,
+        }),
+      });
+      const data = (await response.json()) as { success: boolean; error?: string; message?: string };
+      if (!response.ok || !data.success) {
+        toast.error(data.error ?? "No se pudo guardar el elemento");
+        return;
+      }
+
+      toast.success(data.message ?? (isCreate ? "Elemento creado" : "Elemento actualizado"));
+      setElementoModalOpen(false);
+      await fetchData();
+    } finally {
+      setGuardandoElemento(false);
+    }
+  }
+
+  async function handleEliminarElemento(item: Elemento) {
+    const confirm = window.confirm(
+      `¿Eliminar "${item.nombre}"?\nNo se eliminará si tiene préstamos activos o vencidos.`
+    );
+    if (!confirm) return;
+
+    const response = await fetch(`/api/ortopedia/${item.id}`, { method: "DELETE" });
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
-      toast.error(data.error ?? "No se pudo crear elemento");
+      toast.error(data.error ?? "No se pudo eliminar el elemento");
       return;
     }
-
-    toast.success(data.message ?? "Elemento creado");
-    setNuevoNombre("");
-    setNuevoDescripcion("");
-    setNuevoStock("0");
+    toast.success(data.message ?? "Elemento eliminado");
     await fetchData();
   }
 
@@ -278,7 +343,7 @@ export default function OrtopediaPage() {
 
   if (!canAccessModule(role, "ortopedia")) {
     return (
-      <Card className="bg-white">
+      <Card className="overflow-visible bg-white">
         <CardHeader>
           <CardTitle>Acceso restringido</CardTitle>
         </CardHeader>
@@ -297,44 +362,22 @@ export default function OrtopediaPage() {
     <div className="mx-auto space-y-6">
       <PageHeader title="Elementos Ortopédicos" breadcrumbs={["gestión de préstamos"]} />
 
-      <Card className="bg-white">
-        <CardHeader>
-          <CardTitle className="text-base">Alta de elemento ortopédico</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <input
-            value={nuevoNombre}
-            onChange={(e) => setNuevoNombre(e.target.value)}
-            placeholder="Nombre (ej: Silla de ruedas)"
-            className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
-          />
-          <input
-            value={nuevoDescripcion}
-            onChange={(e) => setNuevoDescripcion(e.target.value)}
-            placeholder="Descripción"
-            className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
-          />
-          <input
-            type="number"
-            min={0}
-            value={nuevoStock}
-            onChange={(e) => setNuevoStock(e.target.value)}
-            placeholder="Stock total"
-            className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
-          />
-          <Button onClick={handleCrearElemento} className="h-10 bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]">
+      <Card className="relative z-40 overflow-visible bg-white">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle className="text-base">Gestión de elementos ortopédicos</CardTitle>
+          <Button onClick={abrirModalCrearElemento} className="h-10 bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]">
             <PlusCircle className="mr-2 h-4 w-4" />
-            Guardar elemento
+            Nuevo elemento
           </Button>
-        </CardContent>
+        </CardHeader>
       </Card>
 
-      <Card className="bg-white">
+      <Card className="relative z-40 overflow-visible bg-white">
         <CardHeader>
           <CardTitle className="text-base">Asignar préstamo (60 días)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="relative">
+        <CardContent className="relative overflow-visible space-y-3">
+          <div ref={socioSearchRef} className="relative z-50">
             <input
               value={socioQuery}
               onFocus={() => setShowSocioResults(true)}
@@ -347,7 +390,7 @@ export default function OrtopediaPage() {
               className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
             />
             {showSocioResults && (
-              <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-md">
+              <div className="absolute z-80 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-md">
                 {searchingSocios ? (
                   <p className="px-3 py-2 text-sm text-slate-500">Buscando socios...</p>
                 ) : socioResults.length === 0 ? (
@@ -421,6 +464,7 @@ export default function OrtopediaPage() {
                   <TableHead>Descripción</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Disponible</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -430,6 +474,18 @@ export default function OrtopediaPage() {
                     <TableCell>{item.descripcion || "—"}</TableCell>
                     <TableCell>{item.stock_total}</TableCell>
                     <TableCell>{item.stock_disponible}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => abrirModalEditarElemento(item)}>
+                          <Edit3 className="mr-1 h-3.5 w-3.5" />
+                          Detalle
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleEliminarElemento(item)}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                          Eliminar
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -509,6 +565,86 @@ export default function OrtopediaPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={elementoModalOpen}
+        onOpenChange={(open) => {
+          if (!guardandoElemento) setElementoModalOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {elementoModalMode === "create" ? "Nuevo elemento ortopédico" : "Detalle / edición de elemento"}
+            </DialogTitle>
+            <DialogDescription>
+              {elementoModalMode === "create"
+                ? "Carga un nuevo elemento para el stock de la cooperativa."
+                : "Puedes actualizar datos y stock del elemento seleccionado."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <label className="grid gap-1 text-sm">
+              <span>Nombre</span>
+              <input
+                value={elementoNombre}
+                onChange={(e) => setElementoNombre(e.target.value)}
+                placeholder="Ej: Silla de ruedas"
+                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                disabled={guardandoElemento}
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span>Descripción</span>
+              <input
+                value={elementoDescripcion}
+                onChange={(e) => setElementoDescripcion(e.target.value)}
+                placeholder="Detalle opcional"
+                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                disabled={guardandoElemento}
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span>Stock total</span>
+              <input
+                type="number"
+                min={0}
+                value={elementoStock}
+                onChange={(e) => setElementoStock(e.target.value)}
+                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                disabled={guardandoElemento}
+              />
+            </label>
+            {elementoModalMode === "edit" ? (
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={elementoActivo}
+                  onChange={(e) => setElementoActivo(e.target.checked)}
+                  disabled={guardandoElemento}
+                />
+                Elemento activo
+              </label>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setElementoModalOpen(false)} disabled={guardandoElemento}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleGuardarElemento}
+                disabled={guardandoElemento}
+                className="bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]"
+              >
+                {guardandoElemento
+                  ? "Guardando..."
+                  : elementoModalMode === "create"
+                    ? "Crear elemento"
+                    : "Guardar cambios"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={renovarDialogOpen}

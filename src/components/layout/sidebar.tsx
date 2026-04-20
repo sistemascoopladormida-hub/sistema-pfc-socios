@@ -65,14 +65,13 @@ type SidebarProps = {
   onCloseMobile: () => void;
 };
 
-const TURNOS_HOY_MOCK = "2026-03-20";
-
 export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobile }: SidebarProps) {
   const motionSettings = useMotionSettings();
   const pathname = usePathname();
   const { role } = useUser();
   const visibleItems = menuItems.filter((item) => canAccessModule(role as UserRole, item.module));
-  const turnosHoy = turnos.filter((turno) => turno.fecha === TURNOS_HOY_MOCK).length;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const turnosFuturos = turnos.filter((turno) => String(turno.fecha) > todayIso).length;
 
   return (
     <>
@@ -148,7 +147,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
                     {!collapsed && <span>{item.label}</span>}
                   </span>
                   {!collapsed && item.module === "turnos" && (
-                    <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{turnosHoy}</span>
+                    <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{turnosFuturos}</span>
                   )}
                 </Link>
               </motion.div>

@@ -1,1 +1,1 @@
-export type UserRole = "admin" | "directivo";
+export type UserRole = "admin" | "directivo" | "ortopedia_admin";

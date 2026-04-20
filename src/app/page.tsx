@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 
 export default function Home() {
   const role = cookies().get("rol")?.value;
+  if (role === "ortopedia_admin") {
+    redirect("/ortopedia");
+  }
   if (role === "admin" || role === "directivo") {
     redirect("/dashboard");
   }

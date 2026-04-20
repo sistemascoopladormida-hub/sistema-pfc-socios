@@ -40,7 +40,7 @@ export default function LoginPage() {
       setUserRole(role);
       window.dispatchEvent(new Event("roles:changed"));
       toast.success(`Bienvenido/a ${usuario}`);
-      router.replace("/dashboard");
+      router.replace(role === ROLES.ORTOPEDIA_ADMIN ? "/ortopedia" : "/dashboard");
       router.refresh();
     } finally {
       setSubmitting(false);
@@ -88,6 +88,7 @@ export default function LoginPage() {
                 >
                   <option value={ROLES.ADMIN}>Marianela Farias (Administrador)</option>
                   <option value={ROLES.DIRECTIVO}>Directivos</option>
+                  <option value={ROLES.ORTOPEDIA_ADMIN}>Guadalupe Saavedra (Ortopedia)</option>
                 </select>
               </div>
             </div>

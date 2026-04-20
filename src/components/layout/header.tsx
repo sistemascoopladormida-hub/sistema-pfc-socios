@@ -20,6 +20,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Panel de control",
   "/socios": "Socios PFC",
   "/turnos": "Turnos",
+  "/ortopedia": "Elementos Ortopédicos",
   "/agenda-profesional": "Agenda Profesional",
   "/profesionales": "Profesionales",
   "/especialidades": "Especialidades",

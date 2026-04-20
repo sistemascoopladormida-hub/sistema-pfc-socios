@@ -22,6 +22,7 @@ type AppModule =
   | "dashboard"
   | "socios"
   | "turnos"
+  | "ortopedia"
   | "agenda-profesional"
   | "profesionales"
   | "especialidades"
@@ -47,6 +48,7 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "dashboard",
     "socios",
     "turnos",
+    "ortopedia",
     "agenda-profesional",
     "profesionales",
     "especialidades",

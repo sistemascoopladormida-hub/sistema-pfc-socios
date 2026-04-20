@@ -12,6 +12,7 @@ import {
   HeartPulse,
   LayoutDashboard,
   Layers,
+  PackageOpen,
   Stethoscope,
   Users,
 } from "lucide-react";
@@ -31,6 +32,7 @@ type MenuItem = {
   | "dashboard"
   | "socios"
   | "turnos"
+  | "ortopedia"
   | "agenda-profesional"
   | "profesionales"
   | "especialidades"
@@ -43,6 +45,7 @@ const menuItems: MenuItem[] = [
   { label: "Dashboard", href: "/dashboard", module: "dashboard", icon: LayoutDashboard },
   { label: "Socios PFC", href: "/socios", module: "socios", icon: Users },
   { label: "Turnos", href: "/turnos", module: "turnos", icon: Calendar },
+  { label: "Elementos Ortopédicos", href: "/ortopedia", module: "ortopedia", icon: PackageOpen },
   {
     label: "Agenda Profesional",
     href: "/agenda-profesional",

@@ -168,7 +168,7 @@ export default function DashboardPage() {
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <Card className="bg-white">
-          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-8">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-2">
             <div className="flex items-center gap-4">
               <HeartPulse className="h-10 w-10 text-pfc-600" />
               <div className="space-y-1">

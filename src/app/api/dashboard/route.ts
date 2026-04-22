@@ -218,6 +218,7 @@ export async function GET() {
         socioNombreMap.get(`${Number(row.cod_soc)}-0`) ??
         `Socio ${row.cod_soc}`,
       cod_soc: row.cod_soc,
+      adherente_codigo: row.adherente_codigo,
       prestacion: row.prestacion,
       profesional: row.profesional,
     }));

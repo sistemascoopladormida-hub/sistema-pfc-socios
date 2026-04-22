@@ -57,6 +57,8 @@ type DashboardResponse = {
     turnos_recientes: Array<{
       id: number;
       socio: string;
+      cod_soc: number | string;
+      adherente_codigo: number | string;
       profesional: string;
       prestacion: string;
       estado: DashboardEstadoTurno | string;
@@ -386,9 +388,17 @@ export default function DashboardPage() {
               <TableBody>
                 {dashboardData.turnos_recientes.map((turno) => {
                   const normalizedEstado = turno.estado.toUpperCase() as DashboardEstadoTurno;
+                  const historialHref = `/socios/${Number(turno.cod_soc)}/${Number(turno.adherente_codigo)}/historial`;
                   return (
                   <TableRow key={turno.id}>
-                    <TableCell>{turno.socio}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={historialHref}
+                        className="font-medium text-pfc-700 underline-offset-2 hover:text-pfc-800 hover:underline"
+                      >
+                        {turno.socio}
+                      </Link>
+                    </TableCell>
                     <TableCell>{turno.profesional}</TableCell>
                     <TableCell>{turno.prestacion}</TableCell>
                     <TableCell>

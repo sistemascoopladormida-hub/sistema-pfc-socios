@@ -32,7 +32,10 @@ type MenuItem = {
   | "dashboard"
   | "socios"
   | "turnos"
-  | "ortopedia"
+  | "ortopedia-gestion"
+  | "ortopedia-asignacion"
+  | "ortopedia-stock"
+  | "ortopedia-prestamos"
   | "agenda-profesional"
   | "profesionales"
   | "especialidades"
@@ -45,7 +48,30 @@ const menuItems: MenuItem[] = [
   { label: "Dashboard", href: "/dashboard", module: "dashboard", icon: LayoutDashboard },
   { label: "Socios PFC", href: "/socios", module: "socios", icon: Users },
   { label: "Turnos", href: "/turnos", module: "turnos", icon: Calendar },
-  { label: "Elementos Ortopédicos", href: "/ortopedia", module: "ortopedia", icon: PackageOpen },
+  {
+    label: "Gestión de elementos",
+    href: "/ortopedia/gestion",
+    module: "ortopedia-gestion",
+    icon: PackageOpen,
+  },
+  {
+    label: "Asignación de elementos",
+    href: "/ortopedia/asignacion",
+    module: "ortopedia-asignacion",
+    icon: PackageOpen,
+  },
+  {
+    label: "Stock ortopedia",
+    href: "/ortopedia/stock",
+    module: "ortopedia-stock",
+    icon: PackageOpen,
+  },
+  {
+    label: "Préstamos ortopedia",
+    href: "/ortopedia/prestamos",
+    module: "ortopedia-prestamos",
+    icon: PackageOpen,
+  },
   {
     label: "Agenda Profesional",
     href: "/agenda-profesional",

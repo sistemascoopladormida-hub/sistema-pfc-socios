@@ -22,7 +22,10 @@ type AppModule =
   | "dashboard"
   | "socios"
   | "turnos"
-  | "ortopedia"
+  | "ortopedia-gestion"
+  | "ortopedia-asignacion"
+  | "ortopedia-stock"
+  | "ortopedia-prestamos"
   | "agenda-profesional"
   | "profesionales"
   | "especialidades"
@@ -48,14 +51,18 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "dashboard",
     "socios",
     "turnos",
-    "ortopedia",
     "agenda-profesional",
     "profesionales",
     "especialidades",
     "prestaciones",
   ],
   directivo: ["dashboard", "reportes"],
-  ortopedia_admin: ["ortopedia"],
+  ortopedia_admin: [
+    "ortopedia-gestion",
+    "ortopedia-asignacion",
+    "ortopedia-stock",
+    "ortopedia-prestamos",
+  ],
 };
 
 export const roleLabel: Record<UserRole, string> = {

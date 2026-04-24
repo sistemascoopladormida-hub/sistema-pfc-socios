@@ -643,12 +643,14 @@ export async function POST(request: Request) {
     const dobleTurnoResult = await pool
       .request()
       .input("cod_soc", sql.Int, payload.codSoc)
+      .input("adherente_codigo", sql.Int, payload.adherenteCodigo)
       .input("prestacion", sql.Int, payload.prestacionId)
       .input("fecha", sql.Date, payload.fecha)
       .query(`
         SELECT COUNT(*) as total
         FROM turnos
         WHERE cod_soc = @cod_soc
+          AND adherente_codigo = @adherente_codigo
           AND ${turnosPrestacionColumn} = @prestacion
           AND fecha = @fecha
           AND estado IN ('RESERVADO','ATENDIDO')
@@ -658,7 +660,7 @@ export async function POST(request: Request) {
     if (dobleTurno > 0) {
       return NextResponse.json({
         success: false,
-        error: "El socio ya tiene un turno de esta prestacion en la fecha indicada",
+        error: "El paciente ya tiene un turno de esta prestacion en la fecha indicada",
       });
     }
 

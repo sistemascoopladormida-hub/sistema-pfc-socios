@@ -6,24 +6,11 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type OrtopediaSection = "gestion" | "asignacion" | "stock" | "prestamos";
@@ -77,9 +64,9 @@ type ApiResponse = {
 type ElementoModalMode = "create" | "edit";
 
 function formatDate(value: string | null) {
-  if (!value) return "—";
+  if (!value) return "-";
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
+  if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleDateString("es-AR", { timeZone: "UTC" });
 }
 
@@ -91,10 +78,10 @@ const sectionToModule = {
 } as const;
 
 const sectionTitles: Record<OrtopediaSection, string> = {
-  gestion: "Gestión de elementos ortopédicos",
-  asignacion: "Asignación de elementos ortopédicos",
-  stock: "Stock de elementos ortopédicos",
-  prestamos: "Préstamos de elementos ortopédicos",
+  gestion: "Gestion de elementos ortopedicos",
+  asignacion: "Asignacion de elementos ortopedicos",
+  stock: "Stock de elementos ortopedicos",
+  prestamos: "Prestamos de elementos ortopedicos",
 };
 
 export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) {
@@ -135,7 +122,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
     const response = await fetch("/api/ortopedia", { cache: "no-store" });
     const data = (await response.json()) as ApiResponse;
     if (!response.ok || !data.success || !data.data) {
-      throw new Error(data.error ?? "No se pudo cargar módulo de ortopedia");
+      throw new Error(data.error ?? "No se pudo cargar ortopedia");
     }
     setElementos(data.data.elementos ?? []);
     setPrestamos(data.data.prestamos ?? []);
@@ -174,13 +161,9 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
     const timer = window.setTimeout(async () => {
       try {
         setSearchingSocios(true);
-        const response = await fetch(`/api/socios?buscar=${encodeURIComponent(q)}&limit=40`, {
-          cache: "no-store",
-        });
+        const response = await fetch(`/api/socios?buscar=${encodeURIComponent(q)}&limit=40`, { cache: "no-store" });
         const data = (await response.json()) as { success: boolean; data?: SocioSearchRow[]; error?: string };
-        if (!response.ok || !data.success) {
-          throw new Error(data.error ?? "No se pudieron buscar socios");
-        }
+        if (!response.ok || !data.success) throw new Error(data.error ?? "No se pudieron buscar socios");
         setSocioResults(data.data ?? []);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Error buscando socios");
@@ -219,7 +202,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       return;
     }
     if (!Number.isInteger(stock) || stock < 0) {
-      toast.error("Stock total inválido");
+      toast.error("Stock total invalido");
       return;
     }
 
@@ -253,11 +236,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
   }
 
   async function handleEliminarElemento(item: Elemento) {
-    const confirm = window.confirm(
-      `¿Eliminar "${item.nombre}"?\nNo se eliminará si tiene préstamos activos o vencidos.`
-    );
-    if (!confirm) return;
-
+    if (!window.confirm(`Eliminar "${item.nombre}"?`)) return;
     const response = await fetch(`/api/ortopedia/${item.id}`, { method: "DELETE" });
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
@@ -270,7 +249,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
 
   async function handleRegistrarPrestamo() {
     if (!selectedSocio) {
-      toast.error("Selecciona socio/adherente");
+      toast.error("Selecciona socio o adherente");
       return;
     }
     const elementoId = Number(selectedElementoId);
@@ -293,11 +272,11 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
 
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
-      toast.error(data.error ?? "No se pudo registrar préstamo");
+      toast.error(data.error ?? "No se pudo registrar prestamo");
       return;
     }
 
-    toast.success(data.message ?? "Préstamo registrado");
+    toast.success(data.message ?? "Prestamo registrado");
     setSelectedElementoId("");
     setPrestamoObs("");
     await fetchData();
@@ -313,7 +292,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
   async function confirmarRenovacion() {
     if (!renovarPrestamoId) return;
     if (!certificadoFile) {
-      toast.error("Debes adjuntar una imagen del certificado médico");
+      toast.error("Debes adjuntar la imagen del certificado medico");
       return;
     }
 
@@ -345,108 +324,130 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
   }
 
   async function handleDevolver(prestamoId: number) {
-    const confirm = window.confirm("¿Confirmas devolución del elemento?");
-    if (!confirm) return;
+    if (!window.confirm("Confirmas la devolucion del elemento?")) return;
     const response = await fetch(`/api/ortopedia/prestamos/${prestamoId}/devolver`, { method: "PUT" });
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
-      toast.error(data.error ?? "No se pudo registrar devolución");
+      toast.error(data.error ?? "No se pudo registrar devolucion");
       return;
     }
-    toast.success(data.message ?? "Devolución registrada");
+    toast.success(data.message ?? "Devolucion registrada");
     await fetchData();
   }
 
   if (!canAccessModule(role, sectionToModule[section])) {
     return (
-      <Card className="overflow-visible bg-white">
+      <Card>
         <CardHeader>
           <CardTitle>Acceso restringido</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-600">No tienes permisos para acceder a este módulo.</p>
+          <p className="text-sm text-slate-500">No tienes permisos para acceder a este modulo.</p>
         </CardContent>
       </Card>
     );
   }
 
   if (loading) {
-    return <Loading label="Cargando módulo de ortopedia..." />;
+    return <Loading label="Cargando modulo de ortopedia..." />;
   }
 
   return (
-    <div className="mx-auto space-y-6">
-      <PageHeader title={sectionTitles[section]} breadcrumbs={["ortopedia"]} />
+    <div className="module-shell space-y-6">
+      <PageHeader title={sectionTitles[section]} breadcrumbs={["Ortopedia"]} />
 
-      {section === "gestion" && (
+      {section === "gestion" ? (
         <>
-          <Card className="relative z-40 overflow-visible bg-white">
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle className="text-base">Gestión de elementos ortopédicos</CardTitle>
-              <Button
-                onClick={abrirModalCrearElemento}
-                className="h-10 bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]"
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Nuevo elemento
-              </Button>
-            </CardHeader>
-          </Card>
+          <div className="flex justify-end">
+            <Button onClick={abrirModalCrearElemento}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Nuevo elemento
+            </Button>
+          </div>
 
-          <Card className="bg-white">
+          <Card>
             <CardHeader>
               <CardTitle className="text-base">Elementos registrados</CardTitle>
             </CardHeader>
             <CardContent>
               {elementos.length === 0 ? (
-                <EmptyState message="Todavía no hay elementos ortopédicos cargados." />
+                <EmptyState message="Todavia no hay elementos ortopedicos cargados." />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Elemento</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Disponible</TableHead>
-                      <TableHead>Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  <div className="hidden min-[1400px]:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Elemento</TableHead>
+                          <TableHead>Descripcion</TableHead>
+                          <TableHead>Total</TableHead>
+                          <TableHead>Disponible</TableHead>
+                          <TableHead>Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {elementos.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium text-foreground">{item.nombre}</TableCell>
+                            <TableCell>{item.descripcion || "-"}</TableCell>
+                            <TableCell>{item.stock_total}</TableCell>
+                            <TableCell>{item.stock_disponible}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2">
+                                <Button size="sm" variant="outline" onClick={() => abrirModalEditarElemento(item)}>
+                                  <Edit3 className="mr-1 h-3.5 w-3.5" />
+                                  Editar
+                                </Button>
+                                <Button size="sm" variant="destructive" onClick={() => handleEliminarElemento(item)}>
+                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  Eliminar
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="space-y-3 min-[1400px]:hidden">
                     {elementos.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.nombre}</TableCell>
-                        <TableCell>{item.descripcion || "—"}</TableCell>
-                        <TableCell>{item.stock_total}</TableCell>
-                        <TableCell>{item.stock_disponible}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={() => abrirModalEditarElemento(item)}>
-                              <Edit3 className="mr-1 h-3.5 w-3.5" />
-                              Detalle
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleEliminarElemento(item)}>
-                              <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Eliminar
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      <div key={item.id} className="data-card space-y-4">
+                        <div>
+                          <p className="text-base font-semibold text-foreground">{item.nombre}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">{item.descripcion || "Sin descripcion"}</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div><p className="field-help">Stock total</p><p className="field-label">{item.stock_total}</p></div>
+                          <div><p className="field-help">Disponible</p><p className="field-label">{item.stock_disponible}</p></div>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button variant="outline" className="sm:flex-1" onClick={() => abrirModalEditarElemento(item)}>
+                            <Edit3 className="mr-2 h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button variant="destructive" className="sm:flex-1" onClick={() => handleEliminarElemento(item)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar
+                          </Button>
+                        </div>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
         </>
-      )}
+      ) : null}
 
-      {section === "asignacion" && (
-        <Card className="relative z-40 overflow-visible bg-white">
+      {section === "asignacion" ? (
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base">Asignar préstamo (60 días)</CardTitle>
+            <CardTitle className="text-base">Asignar prestamo</CardTitle>
           </CardHeader>
-          <CardContent className="relative overflow-visible space-y-3">
-            <div ref={socioSearchRef} className="relative z-50">
+          <CardContent className="space-y-4">
+            <div ref={socioSearchRef} className="relative">
               <input
                 value={socioQuery}
                 onFocus={() => setShowSocioResults(true)}
@@ -455,179 +456,161 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
                   setShowSocioResults(true);
                   setSelectedSocio(null);
                 }}
-                placeholder="Buscar socio/adherente por nombre, DNI o número de socio..."
-                className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                placeholder="Buscar socio o adherente"
+                className="h-11 w-full rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
               />
-              {showSocioResults && (
-                <div className="absolute z-80 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-md">
+              {showSocioResults ? (
+                <div className="absolute z-20 mt-2 max-h-56 w-full overflow-auto rounded-2xl border border-border bg-popover shadow-lg">
                   {searchingSocios ? (
-                    <p className="px-3 py-2 text-sm text-slate-500">Buscando socios...</p>
+                    <p className="px-4 py-3 text-sm text-slate-500">Buscando socios...</p>
                   ) : socioResults.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-slate-500">Sin resultados</p>
+                    <p className="px-4 py-3 text-sm text-slate-500">Sin resultados</p>
                   ) : (
                     socioResults.map((row) => (
                       <button
                         type="button"
                         key={`${row.COD_SOC}-${row.ADHERENTE_CODIGO}-${row.DNI_ADHERENTE}`}
-                        className="w-full border-b border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                        className="w-full border-b border-border px-4 py-3 text-left hover:bg-muted"
                         onClick={() => {
                           setSelectedSocio(row);
-                          setSocioQuery(
-                            `${row.COD_SOC} - ${row.ADHERENTE_NOMBRE || row.APELLIDOS} (${row.VINCULO || "—"})`
-                          );
+                          setSocioQuery(`${row.COD_SOC} - ${row.ADHERENTE_NOMBRE || row.APELLIDOS} (${row.VINCULO || "-"})`);
                           setShowSocioResults(false);
                         }}
                       >
-                        <div className="font-medium">{row.ADHERENTE_NOMBRE || row.APELLIDOS}</div>
-                        <div className="text-xs text-slate-500">
-                          Socio {row.COD_SOC} · Adherente {row.ADHERENTE_CODIGO} · DNI {row.DNI_ADHERENTE || "—"}
-                        </div>
+                        <div className="font-medium text-foreground">{row.ADHERENTE_NOMBRE || row.APELLIDOS}</div>
+                        <div className="text-xs text-slate-500">Socio {row.COD_SOC} · DNI {row.DNI_ADHERENTE || "-"}</div>
                       </button>
                     ))
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <select
-                value={selectedElementoId}
-                onChange={(e) => setSelectedElementoId(e.target.value)}
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
-              >
-                <option value="">Seleccionar elemento disponible</option>
-                {elementosDisponibles.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre} (disp: {item.stock_disponible}/{item.stock_total})
-                  </option>
-                ))}
-              </select>
-              <input
-                value={prestamoObs}
-                onChange={(e) => setPrestamoObs(e.target.value)}
-                placeholder="Observaciones (opcional)"
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600 md:col-span-2"
-              />
+            <div className="field-grid field-grid-2">
+              <label className="grid gap-2">
+                <span className="field-label">Elemento</span>
+                <select
+                  value={selectedElementoId}
+                  onChange={(e) => setSelectedElementoId(e.target.value)}
+                  className="h-11 rounded-2xl border border-border bg-input px-3 text-sm text-foreground outline-none"
+                >
+                  <option value="">Seleccionar elemento disponible</option>
+                  {elementosDisponibles.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nombre} (disp: {item.stock_disponible}/{item.stock_total})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-2">
+                <span className="field-label">Observaciones</span>
+                <input
+                  value={prestamoObs}
+                  onChange={(e) => setPrestamoObs(e.target.value)}
+                  placeholder="Opcional"
+                  className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
+                />
+              </label>
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={handleRegistrarPrestamo} className="bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]">
-                Registrar préstamo
-              </Button>
+              <Button onClick={handleRegistrarPrestamo}>Registrar prestamo</Button>
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
-      {section === "stock" && (
-        <Card className="bg-white">
+      {section === "stock" ? (
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Stock de elementos</CardTitle>
           </CardHeader>
           <CardContent>
             {elementos.length === 0 ? (
-              <EmptyState message="Todavía no hay elementos ortopédicos cargados." />
+              <EmptyState message="Todavia no hay elementos ortopedicos cargados." />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Elemento</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Disponible</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {elementos.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.nombre}</TableCell>
-                      <TableCell>{item.descripcion || "—"}</TableCell>
-                      <TableCell>{item.stock_total}</TableCell>
-                      <TableCell>{item.stock_disponible}</TableCell>
-                      <TableCell>{item.activo ? "Activo" : "Inactivo"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-3">
+                {elementos.map((item) => (
+                  <div key={item.id} className="data-card">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-base font-semibold text-foreground">{item.nombre}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{item.descripcion || "Sin descripcion"}</p>
+                      </div>
+                      <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{item.activo ? "Activo" : "Inactivo"}</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div><p className="field-help">Stock total</p><p className="field-label">{item.stock_total}</p></div>
+                      <div><p className="field-help">Disponible</p><p className="field-label">{item.stock_disponible}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
-      {section === "prestamos" && (
-        <Card className="bg-white">
+      {section === "prestamos" ? (
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base">Préstamos de elementos ortopédicos</CardTitle>
+            <CardTitle className="text-base">Prestamos de elementos</CardTitle>
           </CardHeader>
           <CardContent>
             {prestamos.length === 0 ? (
-              <EmptyState message="No hay préstamos registrados." />
+              <EmptyState message="No hay prestamos registrados." />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Paciente</TableHead>
-                    <TableHead>Elemento</TableHead>
-                    <TableHead>Préstamo</TableHead>
-                    <TableHead>Vencimiento</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Renovaciones</TableHead>
-                    <TableHead>Certificado</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {prestamos.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        {item.paciente_nombre}
-                        <div className="text-xs text-slate-500">
-                          Socio {item.cod_soc} · Adherente {item.adherente_codigo}
+              <div className="space-y-3">
+                {prestamos.map((item) => (
+                  <div key={item.id} className="data-card space-y-4">
+                    <div className="space-y-1">
+                      <p className="text-base font-semibold text-foreground">{item.paciente_nombre}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {item.elemento_nombre} · Socio {item.cod_soc} · Adherente {item.adherente_codigo}
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div><p className="field-help">Prestamo</p><p className="field-label">{formatDate(item.fecha_prestamo)}</p></div>
+                      <div><p className="field-help">Vencimiento</p><p className="field-label">{formatDate(item.fecha_vencimiento)}</p></div>
+                      <div><p className="field-help">Estado</p><p className="field-label">{item.estado}</p></div>
+                      <div><p className="field-help">Renovaciones</p><p className="field-label">{item.renovaciones}</p></div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 lg:flex-row">
+                      {item.certificado_ruta ? (
+                        <a
+                          href={`/api/ortopedia/prestamos/${item.id}/certificado`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-11 items-center justify-center rounded-2xl border border-border px-4 text-sm font-medium text-foreground hover:bg-muted"
+                        >
+                          Ver certificado
+                        </a>
+                      ) : (
+                        <div className="inline-flex h-11 items-center rounded-2xl border border-border px-4 text-sm text-slate-500">
+                          Sin certificado
                         </div>
-                      </TableCell>
-                      <TableCell>{item.elemento_nombre}</TableCell>
-                      <TableCell>{formatDate(item.fecha_prestamo)}</TableCell>
-                      <TableCell>{formatDate(item.fecha_vencimiento)}</TableCell>
-                      <TableCell>{item.estado}</TableCell>
-                      <TableCell>{item.renovaciones}</TableCell>
-                      <TableCell>
-                        {item.certificado_ruta ? (
-                          <a
-                            href={`/api/ortopedia/prestamos/${item.id}/certificado`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                            title={item.certificado_nombre ?? "Ver certificado"}
-                          >
-                            Ver certificado
-                          </a>
-                        ) : (
-                          <span className="text-xs text-slate-500">Sin archivo</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {(item.estado === "ACTIVO" || item.estado === "VENCIDO") && (
-                            <>
-                              <Button size="sm" variant="outline" onClick={() => abrirRenovacion(item.id)}>
-                                Renovar 60d
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => handleDevolver(item.id)}>
-                                Devolver
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      )}
+
+                      {(item.estado === "ACTIVO" || item.estado === "VENCIDO") ? (
+                        <>
+                          <Button variant="outline" onClick={() => abrirRenovacion(item.id)}>
+                            Renovar 60 dias
+                          </Button>
+                          <Button variant="outline" onClick={() => handleDevolver(item.id)}>
+                            Devolver
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       <Dialog
         open={elementoModalOpen}
@@ -637,49 +620,43 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {elementoModalMode === "create" ? "Nuevo elemento ortopédico" : "Detalle / edición de elemento"}
-            </DialogTitle>
-            <DialogDescription>
-              {elementoModalMode === "create"
-                ? "Carga un nuevo elemento para el stock de la cooperativa."
-                : "Puedes actualizar datos y stock del elemento seleccionado."}
-            </DialogDescription>
+            <DialogTitle>{elementoModalMode === "create" ? "Nuevo elemento" : "Editar elemento"}</DialogTitle>
+            <DialogDescription>Completa nombre, descripcion y stock.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <label className="grid gap-1 text-sm">
-              <span>Nombre</span>
+          <div className="field-grid">
+            <label className="grid gap-2">
+              <span className="field-label">Nombre</span>
               <input
                 value={elementoNombre}
                 onChange={(e) => setElementoNombre(e.target.value)}
                 placeholder="Ej: Silla de ruedas"
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
                 disabled={guardandoElemento}
               />
             </label>
-            <label className="grid gap-1 text-sm">
-              <span>Descripción</span>
+            <label className="grid gap-2">
+              <span className="field-label">Descripcion</span>
               <input
                 value={elementoDescripcion}
                 onChange={(e) => setElementoDescripcion(e.target.value)}
                 placeholder="Detalle opcional"
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
                 disabled={guardandoElemento}
               />
             </label>
-            <label className="grid gap-1 text-sm">
-              <span>Stock total</span>
+            <label className="grid gap-2">
+              <span className="field-label">Stock total</span>
               <input
                 type="number"
                 min={0}
                 value={elementoStock}
                 onChange={(e) => setElementoStock(e.target.value)}
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-600"
+                className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
                 disabled={guardandoElemento}
               />
             </label>
             {elementoModalMode === "edit" ? (
-              <label className="inline-flex items-center gap-2 text-sm">
+              <label className="inline-flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={elementoActivo}
@@ -689,20 +666,12 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
                 Elemento activo
               </label>
             ) : null}
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setElementoModalOpen(false)} disabled={guardandoElemento}>
                 Cancelar
               </Button>
-              <Button
-                onClick={handleGuardarElemento}
-                disabled={guardandoElemento}
-                className="bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]"
-              >
-                {guardandoElemento
-                  ? "Guardando..."
-                  : elementoModalMode === "create"
-                    ? "Crear elemento"
-                    : "Guardar cambios"}
+              <Button onClick={handleGuardarElemento} disabled={guardandoElemento}>
+                {guardandoElemento ? "Guardando..." : elementoModalMode === "create" ? "Crear elemento" : "Guardar cambios"}
               </Button>
             </div>
           </div>
@@ -717,44 +686,36 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Renovar préstamo por 60 días</DialogTitle>
-            <DialogDescription>
-              Adjunta la imagen del certificado médico para registrar la renovación.
-            </DialogDescription>
+            <DialogTitle>Renovar prestamo por 60 dias</DialogTitle>
+            <DialogDescription>Adjunta la imagen del certificado medico.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <label className="grid gap-1 text-sm">
-              <span>Certificado médico (imagen)</span>
+          <div className="field-grid">
+            <label className="grid gap-2">
+              <span className="field-label">Certificado medico</span>
               <input
                 type="file"
                 accept="image/*"
                 onChange={(e) => setCertificadoFile(e.target.files?.[0] ?? null)}
-                className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground"
                 disabled={renovando}
               />
-              {certificadoFile ? (
-                <span className="text-xs text-slate-600">Archivo: {certificadoFile.name}</span>
-              ) : null}
+              {certificadoFile ? <span className="field-help">Archivo: {certificadoFile.name}</span> : null}
             </label>
-            <label className="grid gap-1 text-sm">
-              <span>Observaciones (opcional)</span>
+            <label className="grid gap-2">
+              <span className="field-label">Observaciones</span>
               <textarea
                 value={renovarObs}
                 onChange={(e) => setRenovarObs(e.target.value)}
-                className="min-h-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="min-h-28 rounded-2xl border border-border bg-input px-4 py-3 text-sm text-foreground"
                 disabled={renovando}
               />
             </label>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setRenovarDialogOpen(false)} disabled={renovando}>
                 Cancelar
               </Button>
-              <Button
-                onClick={confirmarRenovacion}
-                disabled={!certificadoFile || renovando}
-                className="bg-[#0D6E5A] text-white hover:bg-[#0B5B4B]"
-              >
-                {renovando ? "Guardando..." : "Confirmar renovación"}
+              <Button onClick={confirmarRenovacion} disabled={!certificadoFile || renovando}>
+                {renovando ? "Guardando..." : "Confirmar renovacion"}
               </Button>
             </div>
           </div>

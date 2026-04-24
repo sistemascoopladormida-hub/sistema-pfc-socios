@@ -8,12 +8,10 @@ type PageHeaderProps = {
 
 export function PageHeader({ title, breadcrumbs = [], rightSlot }: PageHeaderProps) {
   return (
-    //se quita el flex y se agrega hidden para no mostrar este componente en el dashboard
-    <div className="mb-6 hidden flex-wrap items-start justify-between gap-4">
+    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="space-y-2">
-        <h1 className="font-display text-3xl leading-none text-pfcText-primary">{title}</h1>
         {breadcrumbs.length > 0 ? (
-          <div className="flex items-center gap-1 text-xs text-pfcText-muted">
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
             <span>Inicio</span>
             {breadcrumbs.map((crumb) => (
               <span key={crumb} className="flex items-center gap-1">
@@ -23,8 +21,9 @@ export function PageHeader({ title, breadcrumbs = [], rightSlot }: PageHeaderPro
             ))}
           </div>
         ) : null}
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">{title}</h1>
       </div>
-      {rightSlot}
+      {rightSlot ? <div className="flex flex-wrap gap-2">{rightSlot}</div> : null}
     </div>
   );
 }

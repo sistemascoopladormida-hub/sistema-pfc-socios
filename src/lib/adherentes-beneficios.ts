@@ -31,7 +31,7 @@ export function calcularEdad(fechaNacimiento: unknown, today = new Date()) {
 
 export function esVinculoHijo(vinculo: unknown) {
   const v = normalize(vinculo);
-  return v.includes("HIJO");
+  return v.startsWith("HIJ") || v.includes(" HIJ");
 }
 
 export function resolverBeneficio(vinculo: unknown, fechaNacimiento: unknown): TipoBeneficio {

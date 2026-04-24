@@ -2,31 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import {
-  CalendarPlus2,
-  ChevronRight,
-  Eye,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { CalendarPlus2, Eye, Search, Trash2 } from "lucide-react";
 
 import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataBadge } from "@/components/ui/data-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type TurnoEstado = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
@@ -45,8 +31,20 @@ type TurnoRow = {
   prestacion: string;
 };
 
+function normalizeHora(raw: string) {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return "";
+  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
+  const match = trimmed.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return "";
+  const [, hh, mm, ss] = match;
+  return `${hh}:${mm}:${ss ?? "00"}`;
+}
+
 export default function TurnosPage() {
   const { role } = useUser();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [turnos, setTurnos] = useState<TurnoRow[]>([]);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
@@ -55,6 +53,7 @@ export default function TurnosPage() {
   const [fechaFilter, setFechaFilter] = useState("");
   const [prestacionFilter, setPrestacionFilter] = useState("");
   const [profesionalFilter, setProfesionalFilter] = useState("");
+  const [onlyOverdueReservados, setOnlyOverdueReservados] = useState(false);
 
   async function fetchTurnos() {
     const response = await fetch("/api/turnos", { cache: "no-store" });
@@ -80,16 +79,17 @@ export default function TurnosPage() {
     bootstrap();
   }, []);
 
-  function normalizeHora(raw: string) {
-    const trimmed = String(raw ?? "").trim();
-    if (!trimmed) return "";
-    if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
-    if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
-    const match = trimmed.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
-    if (!match) return "";
-    const [, hh, mm, ss] = match;
-    return `${hh}:${mm}:${ss ?? "00"}`;
-  }
+  useEffect(() => {
+    const estadoParam = String(searchParams.get("estado") ?? "").toUpperCase();
+    const alertaParam = String(searchParams.get("alerta") ?? "").toLowerCase();
+    if (estadoParam === "RESERVADO" || estadoParam === "ATENDIDO" || estadoParam === "AUSENTE" || estadoParam === "CANCELADO") {
+      setEstadoFilter(estadoParam as EstadoFilter);
+    }
+    if (alertaParam === "vencidos") {
+      setEstadoFilter("RESERVADO");
+      setOnlyOverdueReservados(true);
+    }
+  }, [searchParams]);
 
   function toTurnoDateTime(turno: TurnoRow) {
     const fecha = String(turno.fecha).slice(0, 10);
@@ -107,10 +107,6 @@ export default function TurnosPage() {
     return turnoDate.getTime() <= Date.now();
   }
 
-  function canMarkAsAusente(turno: TurnoRow) {
-    return canMarkAsAtendido(turno);
-  }
-
   function normalizeEstado(estado: string): TurnoEstado {
     const normalized = String(estado).toUpperCase();
     if (normalized === "ATENDIDO") return "ATENDIDO";
@@ -121,9 +117,6 @@ export default function TurnosPage() {
 
   function getEstadoOptions(turno: TurnoRow): EstadoOption[] {
     const estado = normalizeEstado(String(turno.estado));
-    const puedeAtender = canMarkAsAtendido(turno);
-    const puedeAusente = canMarkAsAusente(turno);
-
     if (estado === "ATENDIDO") {
       return [
         { value: "ATENDIDO", disabled: false },
@@ -148,24 +141,28 @@ export default function TurnosPage() {
 
     return [
       { value: "RESERVADO", disabled: false },
-      { value: "ATENDIDO", disabled: !puedeAtender },
-      { value: "AUSENTE", disabled: !puedeAusente },
+      { value: "ATENDIDO", disabled: !canMarkAsAtendido(turno) },
+      { value: "AUSENTE", disabled: !canMarkAsAtendido(turno) },
       { value: "CANCELADO", disabled: false },
     ];
   }
 
-  function getEstadoKind(estado: string) {
-    const normalized = String(estado).toUpperCase();
-    if (normalized === "RESERVADO") return "reservado" as const;
-    if (normalized === "ATENDIDO") return "atendido" as const;
-    if (normalized === "AUSENTE") return "ausente" as const;
-    return "cancelado" as const;
+  function getEstadoSelectClass(turno: TurnoRow) {
+    const estado = normalizeEstado(String(turno.estado));
+    if (estado === "ATENDIDO") {
+      return "border-emerald-300/40 bg-emerald-400/10 text-emerald-800 dark:text-emerald-200";
+    }
+    if (estado === "AUSENTE") {
+      return "border-rose-300/40 bg-rose-400/10 text-rose-800 dark:text-rose-200";
+    }
+    if (estado === "CANCELADO") {
+      return "border-slate-300/40 bg-slate-400/10 text-slate-700 dark:text-slate-200";
+    }
+    return "border-amber-300/40 bg-amber-400/10 text-amber-800 dark:text-amber-200";
   }
 
   async function updateEstado(turnoId: number, action: "cancelar" | "atender" | "ausente") {
-    const response = await fetch(`/api/turnos/${turnoId}/${action}`, {
-      method: "PUT",
-    });
+    const response = await fetch(`/api/turnos/${turnoId}/${action}`, { method: "PUT" });
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
       toast.error(data.error ?? "No se pudo actualizar el estado");
@@ -189,20 +186,17 @@ export default function TurnosPage() {
     const action = actionMap[nextEstado as Exclude<TurnoEstado, "RESERVADO">];
     if (!action) return;
 
-    const confirmar = window.confirm(`¿Confirmar cambio de estado a ${nextEstado}?`);
-    if (!confirmar) return;
+    if (!window.confirm(`Confirmar cambio de estado a ${nextEstado}?`)) return;
     await updateEstado(turno.id, action);
   }
 
   async function eliminarTurno(turnoId: number) {
     const confirmar = window.confirm(
-      "¿Deseas eliminar este turno? Esta acción eliminará también su historial asociado y no se puede deshacer."
+      "Deseas eliminar este turno? Esta accion eliminara tambien su historial asociado."
     );
     if (!confirmar) return;
 
-    const response = await fetch(`/api/turnos/${turnoId}`, {
-      method: "DELETE",
-    });
+    const response = await fetch(`/api/turnos/${turnoId}`, { method: "DELETE" });
     const data = (await response.json()) as { success: boolean; error?: string; message?: string };
     if (!response.ok || !data.success) {
       toast.error(data.error ?? "No se pudo eliminar el turno");
@@ -213,32 +207,28 @@ export default function TurnosPage() {
     await fetchTurnos();
   }
 
-  const resumen = useMemo(() => {
-    return turnos.reduce(
-      (acc, turno) => {
-        const estado = String(turno.estado).toUpperCase();
-        acc.total += 1;
-        if (estado === "RESERVADO") acc.reservados += 1;
-        if (estado === "ATENDIDO") acc.atendidos += 1;
-        if (estado === "AUSENTE") acc.ausentes += 1;
-        if (estado === "CANCELADO") acc.cancelados += 1;
-        return acc;
-      },
-      {
-        total: 0,
-        reservados: 0,
-        atendidos: 0,
-        ausentes: 0,
-        cancelados: 0,
-      }
-    );
-  }, [turnos]);
+  const resumen = useMemo(
+    () =>
+      turnos.reduce(
+        (acc, turno) => {
+          const estado = String(turno.estado).toUpperCase();
+          acc.total += 1;
+          if (estado === "RESERVADO") acc.reservados += 1;
+          if (estado === "ATENDIDO") acc.atendidos += 1;
+          if (estado === "AUSENTE") acc.ausentes += 1;
+          if (estado === "CANCELADO") acc.cancelados += 1;
+          return acc;
+        },
+        { total: 0, reservados: 0, atendidos: 0, ausentes: 0, cancelados: 0 }
+      ),
+    [turnos]
+  );
 
   const prestacionesOpciones = useMemo(() => {
     const set = new Set<string>();
     for (const t of turnos) {
-      const p = String(t.prestacion ?? "").trim();
-      if (p) set.add(p);
+      const value = String(t.prestacion ?? "").trim();
+      if (value) set.add(value);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [turnos]);
@@ -246,15 +236,14 @@ export default function TurnosPage() {
   const profesionalesOpciones = useMemo(() => {
     const set = new Set<string>();
     for (const t of turnos) {
-      const p = String(t.profesional ?? "").trim();
-      if (p) set.add(p);
+      const value = String(t.profesional ?? "").trim();
+      if (value) set.add(value);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [turnos]);
 
   const turnosFiltrados = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-
     return turnos.filter((turno) => {
       const estado = String(turno.estado).toUpperCase();
       const fecha = String(turno.fecha).slice(0, 10);
@@ -272,23 +261,22 @@ export default function TurnosPage() {
       const bySearch = !term || searchable.includes(term);
       const byEstado = estadoFilter === "TODOS" || estado === estadoFilter;
       const byFecha = !fechaFilter || fecha === fechaFilter;
-      const byPrestacion =
-        !prestacionFilter || String(turno.prestacion ?? "").trim() === prestacionFilter;
-      const byProfesional =
-        !profesionalFilter || String(turno.profesional ?? "").trim() === profesionalFilter;
+      const byPrestacion = !prestacionFilter || String(turno.prestacion ?? "").trim() === prestacionFilter;
+      const byProfesional = !profesionalFilter || String(turno.profesional ?? "").trim() === profesionalFilter;
+      const byVencidos = !onlyOverdueReservados || (estado === "RESERVADO" && canMarkAsAtendido(turno));
 
-      return bySearch && byEstado && byFecha && byPrestacion && byProfesional;
+      return bySearch && byEstado && byFecha && byPrestacion && byProfesional && byVencidos;
     });
-  }, [turnos, searchTerm, estadoFilter, fechaFilter, prestacionFilter, profesionalFilter]);
+  }, [turnos, searchTerm, estadoFilter, fechaFilter, prestacionFilter, profesionalFilter, onlyOverdueReservados]);
 
   if (!canAccessModule(role, "turnos")) {
     return (
-      <Card className="bg-white">
+      <Card>
         <CardHeader>
           <CardTitle>Acceso restringido</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-600">No tienes permisos para acceder a este modulo.</p>
+          <p className="text-sm text-slate-500">No tienes permisos para acceder a este modulo.</p>
         </CardContent>
       </Card>
     );
@@ -299,235 +287,300 @@ export default function TurnosPage() {
   }
 
   return (
-    <div className="mx-auto space-y-6">
+    <div className="module-shell space-y-6">
       <PageHeader
-        title="Gestión de Turnos"
-        breadcrumbs={["operación diaria"]}
+        title="Gestion de turnos"
+        breadcrumbs={["Operacion diaria"]}
         rightSlot={
           <Link href="/turnos/nuevo">
-            <Button className="h-10 rounded-lg bg-[#0D6E5A] px-4 text-white shadow-sm hover:-translate-y-0.5 hover:bg-[#0B5B4B]">
+            <Button className="h-11 px-4">
               <CalendarPlus2 className="mr-2 h-4 w-4" />
-              Nuevo Turno
+              Nuevo turno
             </Button>
           </Link>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Card className="bg-white">
-          <CardContent className="py-4">
-            <p className="text-xs text-slate-500">Total</p>
-            <p className="text-2xl font-semibold text-slate-900">{resumen.total}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white">
-          <CardContent className="py-4">
-            <p className="text-xs text-slate-500">Reservados</p>
-            <p className="text-2xl font-semibold text-blue-700">{resumen.reservados}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white">
-          <CardContent className="py-4">
-            <p className="text-xs text-slate-500">Atendidos</p>
-            <p className="text-2xl font-semibold text-emerald-700">{resumen.atendidos}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white">
-          <CardContent className="py-4">
-            <p className="text-xs text-slate-500">Ausentes</p>
-            <p className="text-2xl font-semibold text-amber-700">{resumen.ausentes}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white">
-          <CardContent className="py-4">
-            <p className="text-xs text-slate-500">Cancelados</p>
-            <p className="text-2xl font-semibold text-rose-700">{resumen.cancelados}</p>
-          </CardContent>
-        </Card>
+      <div className="stat-grid">
+        {[
+          { label: "Total", value: resumen.total },
+          { label: "Reservados", value: resumen.reservados },
+          { label: "Atendidos", value: resumen.atendidos },
+          { label: "Ausentes", value: resumen.ausentes },
+          { label: "Cancelados", value: resumen.cancelados },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="py-5">
+              <p className="text-sm text-slate-500 dark:text-slate-400">{item.label}</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{item.value}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <Card className="bg-white">
-        <CardHeader>
-          <div className="flex flex-col gap-3">
-            <CardTitle className="text-[13px] font-semibold uppercase tracking-[0.08em] text-pfcText-muted">
-              Turnos y acciones
-            </CardTitle>
-            <div className="flex flex-col gap-3 lg:flex-row">
-              <label className="relative w-full lg:max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+      <Card>
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-base">Buscar y filtrar</CardTitle>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Usa filtros rápidos para encontrar turnos sin ocupar tanto espacio de pantalla.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            <label className="grid min-w-0 gap-1 lg:col-span-3 2xl:col-span-2">
+              <span className="field-label">Buscar</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Buscar por paciente, socio, profesional o prestación..."
-                  className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
+                  placeholder="Paciente, socio, profesional o prestacion"
+                  className="h-10 w-full rounded-xl border border-border bg-input px-10 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <div className="flex flex-1 flex-wrap gap-2">
-                <select
-                  value={estadoFilter}
-                  onChange={(event) => setEstadoFilter(event.target.value as EstadoFilter)}
-                  className="h-10 min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
-                >
-                  <option value="TODOS">Todos los estados</option>
-                  <option value="RESERVADO">Reservado</option>
-                  <option value="ATENDIDO">Atendido</option>
-                  <option value="AUSENTE">Ausente</option>
-                  <option value="CANCELADO">Cancelado</option>
-                </select>
-                <select
-                  value={prestacionFilter}
-                  onChange={(event) => setPrestacionFilter(event.target.value)}
-                  className="h-10 min-w-[200px] max-w-[min(100%,280px)] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
-                  title="Filtrar por prestación"
-                >
-                  <option value="">Todas las prestaciones</option>
-                  {prestacionesOpciones.map((nombre) => (
-                    <option key={nombre} value={nombre}>
-                      {nombre}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={profesionalFilter}
-                  onChange={(event) => setProfesionalFilter(event.target.value)}
-                  className="h-10 min-w-[200px] max-w-[min(100%,280px)] rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
-                  title="Filtrar por profesional"
-                >
-                  <option value="">Todos los profesionales</option>
-                  {profesionalesOpciones.map((nombre) => (
-                    <option key={nombre} value={nombre}>
-                      {nombre}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={fechaFilter}
-                  onChange={(event) => setFechaFilter(event.target.value)}
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
-                />
-                {(searchTerm ||
-                  estadoFilter !== "TODOS" ||
-                  fechaFilter ||
-                  prestacionFilter ||
-                  profesionalFilter) && (
-                  <Button
-                    variant="outline"
-                    className="h-10"
-                    onClick={() => {
-                      setSearchTerm("");
-                      setEstadoFilter("TODOS");
-                      setFechaFilter("");
-                      setPrestacionFilter("");
-                      setProfesionalFilter("");
-                    }}
-                  >
-                    Limpiar filtros
-                  </Button>
-                )}
               </div>
-            </div>
-            <p className="text-xs text-slate-500">
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Estado</span>
+              <select
+                value={estadoFilter}
+                onChange={(event) => setEstadoFilter(event.target.value as EstadoFilter)}
+                className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="TODOS">Todos</option>
+                <option value="RESERVADO">Reservado</option>
+                <option value="ATENDIDO">Atendido</option>
+                <option value="AUSENTE">Ausente</option>
+                <option value="CANCELADO">Cancelado</option>
+              </select>
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Prestacion</span>
+              <select
+                value={prestacionFilter}
+                onChange={(event) => setPrestacionFilter(event.target.value)}
+                className="h-10 w-[98%] rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="">Todas</option>
+                {prestacionesOpciones.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Profesional</span>
+              <select
+                value={profesionalFilter}
+                onChange={(event) => setProfesionalFilter(event.target.value)}
+                className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="">Todos</option>
+                {profesionalesOpciones.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Fecha</span>
+              <input
+                type="date"
+                value={fechaFilter}
+                onChange={(event) => setFechaFilter(event.target.value)}
+                className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               Mostrando {turnosFiltrados.length} de {turnos.length} turnos.
             </p>
+            {(searchTerm || estadoFilter !== "TODOS" || fechaFilter || prestacionFilter || profesionalFilter || onlyOverdueReservados) ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm("");
+                  setEstadoFilter("TODOS");
+                  setFechaFilter("");
+                  setPrestacionFilter("");
+                  setProfesionalFilter("");
+                  setOnlyOverdueReservados(false);
+                }}
+              >
+                Limpiar filtros
+              </Button>
+            ) : null}
           </div>
+          {onlyOverdueReservados ? (
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              Filtro activo: solo turnos reservados con fecha/hora vencida.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Listado de turnos</CardTitle>
         </CardHeader>
-        <CardContent>
-        {turnosFiltrados.length === 0 ? (
-          <EmptyState
-            title={turnos.length === 0 ? "Sin turnos para mostrar" : "No hay resultados con esos filtros"}
-            message={
-              turnos.length === 0
-                ? "Todavía no hay turnos cargados en esta vista. Puedes crear uno nuevo para comenzar."
-                : "Prueba cambiar los filtros o limpiar la búsqueda para ver más resultados."
-            }
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <Table className="min-w-[1200px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Socio</TableHead>
-                <TableHead>Adherente</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Profesional</TableHead>
-                <TableHead>Prestacion</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Hora</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {turnosFiltrados.map((turno, idx) => (
-                <motion.tr
-                  key={turno.id}
-                  initial={{ opacity: 0, x: 8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.2, delay: idx * 0.04 }}
-                  className="border-b"
-                >
-                  <TableCell>{turno.id}</TableCell>
-                  <TableCell>{turno.cod_soc}</TableCell>
-                  <TableCell>{turno.adherente_codigo}</TableCell>
-                  <TableCell>{turno.nombre || "No registrado"}</TableCell>
-                  <TableCell>{turno.profesional}</TableCell>
-                  <TableCell>{turno.prestacion}</TableCell>
+        <CardContent className="space-y-2">
+          {turnosFiltrados.length === 0 ? (
+            <EmptyState
+              title={turnos.length === 0 ? "Sin turnos para mostrar" : "No hay resultados"}
+              message={
+                turnos.length === 0
+                  ? "Todavia no hay turnos cargados."
+                  : "Prueba cambiar los filtros o limpiar la busqueda."
+              }
+            />
+          ) : (
+            <>
+              <div className="hidden min-[1700px]:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Paciente</TableHead>
+                      <TableHead>Socio</TableHead>
+                      <TableHead>Atencion</TableHead>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Hora</TableHead>
+                      <TableHead className="w-[180px]">Estado</TableHead>
+                      <TableHead className="w-[120px]">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {turnosFiltrados.map((turno) => (
+                      <TableRow key={turno.id}>
+                        <TableCell className="font-medium text-foreground">{turno.nombre || "No registrado"}</TableCell>
+                        <TableCell>{turno.cod_soc}</TableCell>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-medium text-foreground">{turno.profesional}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{turno.prestacion}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" })}</TableCell>
+                        <TableCell>{normalizeHora(String(turno.hora)).slice(0, 5) || "No registrada"}</TableCell>
+                        <TableCell className="align-top">
+                          <select
+                            value={normalizeEstado(String(turno.estado))}
+                            onChange={(event) => onEstadoSelect(turno, event.target.value as TurnoEstado)}
+                            className={`h-9 w-full rounded-lg border px-2 text-sm font-medium outline-none ${getEstadoSelectClass(turno)}`}
+                          >
+                            {getEstadoOptions(turno).map((option) => (
+                              <option key={option.value} value={option.value} disabled={option.disabled}>
+                                {option.value}
+                              </option>
+                            ))}
+                          </select>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="icon-sm"
+                              variant="outline"
+                              onClick={() => setTurnoDetalleId(turno.id)}
+                              aria-label="Ver detalle"
+                              title="Ver detalle"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            {role === "admin" ? (
+                              <Button
+                                size="icon-sm"
+                                variant="destructive"
+                                onClick={() => eliminarTurno(turno.id)}
+                                aria-label="Eliminar turno"
+                                title="Eliminar turno"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-                  <TableCell>
-                    {new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" })}
-                  </TableCell>
+              <div className="space-y-2 min-[1700px]:hidden">
+                {turnosFiltrados.map((turno) => (
+                  <div key={turno.id} className="data-card space-y-2">
+                    <div className="grid gap-2 lg:grid-cols-[1.2fr_0.8fr]">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold text-foreground">{turno.nombre || "No registrado"}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Socio {turno.cod_soc} · Adherente {turno.adherente_codigo}
+                          </p>
+                        </div>
+                        <p className="text-sm text-foreground">
+                          {turno.profesional} - <span className="text-slate-500 dark:text-slate-400">{turno.prestacion}</span>
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" })} ·{" "}
+                          {normalizeHora(String(turno.hora)).slice(0, 5) || "No registrada"}
+                        </p>
+                      </div>
 
-                  <TableCell>{normalizeHora(String(turno.hora)).slice(0, 5) || "No registrada"}</TableCell>
-
-                  <TableCell>
-                    <div className="flex min-w-[190px] items-center gap-2">
-                      <select
-                        value={normalizeEstado(String(turno.estado))}
-                        onChange={(event) => onEstadoSelect(turno, event.target.value as TurnoEstado)}
-                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-medium outline-none ring-teal-600/20 transition focus:border-teal-600 focus:ring-2"
-                      >
-                        {getEstadoOptions(turno).map((option) => (
-                          <option key={option.value} value={option.value} disabled={option.disabled}>
-                            {option.value}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                      <DataBadge kind={getEstadoKind(String(turno.estado))}>{String(turno.estado)}</DataBadge>
+                      <div className="grid gap-2">
+                        <label className="grid gap-1">
+                          <span className="field-help">Estado</span>
+                          <select
+                            value={normalizeEstado(String(turno.estado))}
+                            onChange={(event) => onEstadoSelect(turno, event.target.value as TurnoEstado)}
+                            className={`h-10 rounded-xl border px-3 text-sm font-medium outline-none ${getEstadoSelectClass(turno)}`}
+                          >
+                            {getEstadoOptions(turno).map((option) => (
+                              <option key={option.value} value={option.value} disabled={option.disabled}>
+                                {option.value}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 gap-2 px-3"
+                            onClick={() => setTurnoDetalleId(turno.id)}
+                            aria-label="Ver detalle"
+                            title="Ver detalle"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span className="text-xs font-medium">Ver detalle</span>
+                          </Button>
+                          {role === "admin" ? (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-9 gap-2 px-3"
+                              onClick={() => eliminarTurno(turno.id)}
+                              aria-label="Eliminar turno"
+                              title="Eliminar turno"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="text-xs font-medium">Eliminar turno</span>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2.5"
-                        onClick={() => setTurnoDetalleId(turno.id)}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        Detalle
-                      </Button>
-                      {role === "admin" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 border-rose-200 px-2.5 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-                          onClick={() => eliminarTurno(turno.id)}
-                        >
-                          <Trash2 className="" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </motion.tr>
-              ))}
-            </TableBody>
-          </Table>
-          </div>
-        )}
-      </CardContent>
+
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
       </Card>
 
       <TurnoDetalleModal

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { DM_Serif_Display } from "next/font/google";
 import { GeistSans } from "geist/font/sans";
 import { AppLayout } from "@/components/layout/app-layout";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { ProfesionalesProvider } from "@/lib/profesionales-context";
 import { runMigrations } from "@/lib/sqlserver";
@@ -39,14 +40,16 @@ export default async function RootLayout({
       : undefined;
 
   return (
-    <html lang="en">
+    <html lang="es" suppressHydrationWarning>
       <body className={`${GeistSans.variable} ${dmSerif.variable} ${GeistSans.className} antialiased`}>
-        <UserProvider initialRole={initialRole}>
-          <ProfesionalesProvider>
-            <AppLayout>{children}</AppLayout>
-            <Toaster position="top-right" richColors />
-          </ProfesionalesProvider>
-        </UserProvider>
+        <ThemeProvider>
+          <UserProvider initialRole={initialRole}>
+            <ProfesionalesProvider>
+              <AppLayout>{children}</AppLayout>
+              <Toaster position="top-right" richColors />
+            </ProfesionalesProvider>
+          </UserProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

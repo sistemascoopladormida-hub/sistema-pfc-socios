@@ -19,16 +19,16 @@ type DataBadgeProps = {
 };
 
 const byKind: Record<DataBadgeKind, string> = {
-  "cat-basica": "bg-[#E8F5F0] text-[#0D6E5A]",
-  "cat-plus": "bg-[#EFE9FF] text-[#5B21B6]",
-  "beneficio-titular": "bg-[#E6F4EF] text-[#0B5B4B]",
-  "beneficio-propio": "bg-[#FEF3C7] text-[#92400E]",
-  reservado: "bg-[#FEF3C7] text-[#92400E]",
-  atendido: "bg-[#D1FAE5] text-[#065F46]",
-  ausente: "bg-[#FEE2E2] text-[#991B1B]",
-  cancelado: "bg-slate-200 text-slate-700",
-  warning: "bg-amber-100 text-amber-800",
-  default: "bg-slate-100 text-slate-700",
+  "cat-basica": "border border-emerald-300/20 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300",
+  "cat-plus": "border border-violet-300/20 bg-violet-400/10 text-violet-700 dark:text-violet-300",
+  "beneficio-titular": "border border-sky-300/20 bg-sky-400/10 text-sky-700 dark:text-sky-300",
+  "beneficio-propio": "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
+  reservado: "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
+  atendido: "border border-emerald-300/20 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300",
+  ausente: "border border-rose-300/20 bg-rose-400/10 text-rose-700 dark:text-rose-300",
+  cancelado: "border border-border bg-muted text-muted-foreground",
+  warning: "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
+  default: "border border-border bg-muted text-muted-foreground",
 };
 
 export function DataBadge({ kind = "default", children, className }: DataBadgeProps) {
@@ -36,6 +36,7 @@ export function DataBadge({ kind = "default", children, className }: DataBadgePr
     <span
       className={cn(
         "inline-flex h-6 items-center rounded-md px-2.5 text-[11px] font-semibold tracking-wide",
+        "rounded-full px-3 uppercase tracking-[0.16em]",
         byKind[kind],
         className
       )}

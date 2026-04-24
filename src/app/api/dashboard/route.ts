@@ -17,8 +17,14 @@ type PrestacionTopRow = {
   total: number | string;
 };
 
+type TurnosPorMesRow = {
+  anio: number | string;
+  mes: number | string;
+  total: number | string;
+};
+
 /** Cantidad de prestaciones con más atenciones que se envían al gráfico circular. */
-const PRESTACIONES_TOP_GRAFICO = 10;
+const PRESTACIONES_TOP_GRAFICO = 7;
 const ANIO_EN_CURSO = new Date().getFullYear();
 
 type TurnoRecienteRow = {
@@ -66,6 +72,8 @@ export async function GET() {
       profesionalesActivosResult,
       prestacionesAnioResult,
       turnosRecientesResult,
+      turnosPorMesResult,
+      turnosReservadosVencidosResult,
     ] = await Promise.all([
       pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
         SELECT COUNT(*) as total
@@ -96,6 +104,28 @@ export async function GET() {
         JOIN prestaciones p ON p.id = t.prestacion_id
         JOIN profesionales pr ON pr.id = t.profesional_id
         ORDER BY t.creado_en DESC
+      `),
+      pfcPool.request().query(`
+        SELECT
+          YEAR(fecha) AS anio,
+          MONTH(fecha) AS mes,
+          COUNT(*) AS total
+        FROM turnos
+        WHERE fecha >= DATEADD(MONTH, -11, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+        GROUP BY YEAR(fecha), MONTH(fecha)
+        ORDER BY anio ASC, mes ASC
+      `),
+      pfcPool.request().query(`
+        SELECT COUNT(*) AS total
+        FROM turnos
+        WHERE estado = 'RESERVADO'
+          AND (
+            fecha < CAST(GETDATE() AS date)
+            OR (
+              fecha = CAST(GETDATE() AS date)
+              AND CAST(hora AS time) < CAST(GETDATE() AS time)
+            )
+          )
       `),
     ]);
 
@@ -153,6 +183,9 @@ export async function GET() {
       (profesionalesActivosResult.recordset[0] as TotalRow | undefined)?.total
     );
     const prestacionesAnio = toNumber((prestacionesAnioResult.recordset[0] as TotalRow | undefined)?.total);
+    const turnosReservadosVencidos = toNumber(
+      (turnosReservadosVencidosResult.recordset[0] as TotalRow | undefined)?.total
+    );
     const prestacionesMes = prestacionesAnio;
     const periodoPrestacionesUso: "anio" = "anio";
 
@@ -176,6 +209,27 @@ export async function GET() {
     const prestacionesTop = prestacionesUso
       .filter((row) => row.total > 0)
       .slice(0, PRESTACIONES_TOP_GRAFICO);
+
+    const turnosPorMesMap = new Map<string, number>();
+    for (const row of turnosPorMesResult.recordset as TurnosPorMesRow[]) {
+      const key = `${Number(row.anio)}-${String(Number(row.mes)).padStart(2, "0")}`;
+      turnosPorMesMap.set(key, toNumber(row.total));
+    }
+
+    const turnosPorMes = Array.from({ length: 12 }, (_, index) => {
+      const date = new Date();
+      date.setDate(1);
+      date.setMonth(date.getMonth() - (11 - index));
+      const anio = date.getFullYear();
+      const mes = date.getMonth() + 1;
+      const key = `${anio}-${String(mes).padStart(2, "0")}`;
+
+      return {
+        anio,
+        mes,
+        total: turnosPorMesMap.get(key) ?? 0,
+      };
+    });
 
     const turnosRows = turnosRecientesResult.recordset as TurnoRecienteRow[];
     const codSocList = [
@@ -238,7 +292,9 @@ export async function GET() {
         prestaciones_top: prestacionesTop,
         prestaciones_uso: prestacionesUso,
         prestaciones_periodo: periodoPrestacionesUso,
+        turnos_por_mes: turnosPorMes,
         turnos_recientes: turnosRecientes,
+        turnos_reservados_vencidos: turnosReservadosVencidos,
       },
     });
   } catch (error) {

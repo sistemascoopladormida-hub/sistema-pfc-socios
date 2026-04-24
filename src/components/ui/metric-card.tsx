@@ -1,13 +1,11 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import { useMotionSettings } from "@/hooks/use-motion-settings";
 import { cn } from "@/lib/utils";
 
-type MetricCardTone = "teal" | "blue" | "amber" | "red" | "slate";
+type MetricCardTone = "teal" | "amber" | "red" | "slate";
 
 type MetricCardProps = {
   label: string;
@@ -15,57 +13,30 @@ type MetricCardProps = {
   description: string;
   icon: LucideIcon;
   tone?: MetricCardTone;
-  trend?: { label: string; positive?: boolean };
-  accentWarning?: boolean;
 };
 
-const toneStyles: Record<MetricCardTone, { iconBg: string; iconColor: string }> = {
-  teal: { iconBg: "bg-[#DDF3ED]", iconColor: "text-[#0D6E5A]" },
-  blue: { iconBg: "bg-blue-100", iconColor: "text-blue-700" },
-  amber: { iconBg: "bg-amber-100", iconColor: "text-amber-700" },
-  red: { iconBg: "bg-red-100", iconColor: "text-red-700" },
-  slate: { iconBg: "bg-slate-100", iconColor: "text-slate-700" },
+const toneStyles: Record<MetricCardTone, string> = {
+  teal: "bg-emerald-400/12 text-emerald-700 ring-1 ring-emerald-300/18 dark:text-emerald-300",
+  amber: "bg-amber-400/12 text-amber-700 ring-1 ring-amber-300/18 dark:text-amber-300",
+  red: "bg-rose-400/12 text-rose-700 ring-1 ring-rose-300/18 dark:text-rose-300",
+  slate: "bg-muted text-foreground ring-1 ring-border",
 };
 
-export function MetricCard({
-  label,
-  value,
-  description,
-  icon: Icon,
-  tone = "teal",
-  trend,
-  accentWarning = false,
-}: MetricCardProps) {
-  const motionSettings = useMotionSettings();
-  const toneStyle = toneStyles[tone];
-
+export function MetricCard({ label, value, description, icon: Icon, tone = "slate" }: MetricCardProps) {
   return (
-    <motion.article
-      initial={motionSettings.page.initial}
-      animate={motionSettings.page.animate}
-      transition={{ duration: 0.25 }}
-      className={cn(
-        "rounded-xl border border-[#E8EBE9] bg-white p-4 shadow-pfc-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-pfc-card-hover",
-        accentWarning && "border-l-[3px] border-l-amber-500"
-      )}
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-[13px] font-semibold tracking-[0.08em] text-pfcText-muted uppercase">{label}</p>
-        <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", toneStyle.iconBg)}>
-          <Icon className={cn("h-4 w-4", toneStyle.iconColor)} />
+    <article className="rounded-[24px] border border-border bg-card p-5 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
+            <AnimatedNumber value={value} />
+          </p>
+        </div>
+        <span className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", toneStyles[tone])}>
+          <Icon className="h-5 w-5" />
         </span>
       </div>
-      <p className="font-display text-[42px] leading-none text-pfcText-primary">
-        <AnimatedNumber value={value} />
-      </p>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-xs text-pfcText-secondary">{description}</p>
-        {trend ? (
-          <span className={cn("text-[11px] font-medium", trend.positive ? "text-emerald-700" : "text-red-700")}>
-            {trend.label}
-          </span>
-        ) : null}
-      </div>
-    </motion.article>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+    </article>
   );
 }

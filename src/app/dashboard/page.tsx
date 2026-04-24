@@ -2,37 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Calendar, HeartPulse, Stethoscope, Users } from "lucide-react";
-import { motion } from "framer-motion";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { AlertTriangle, Calendar, Clock3, Plus, Users } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-const PRESTACIONES_PIE_COLORS = [
-  "#0D6E5A",
-  "#138A3D",
-  "#0EA5E9",
-  "#2563EB",
-  "#6366F1",
-  "#059669",
-  "#B45309",
-  "#92400E",
-  "#0D9488",
-  "#4F46E5",
-];
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataBadge } from "@/components/ui/data-badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Loading } from "@/components/ui/loading";
 import { MetricCard } from "@/components/ui/metric-card";
-import { PageHeader } from "@/components/ui/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type DashboardEstadoTurno = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
@@ -49,11 +37,11 @@ type DashboardResponse = {
     turnos_hoy: number;
     profesionales_activos: number;
     prestaciones_mes: number;
-    /** Top N prestaciones para el gráfico circular (las más usadas con al menos 1 atención). */
     prestaciones_top: Array<{ nombre: string; total: number }>;
-    /** Todas las prestaciones del catálogo con total de atenciones en el periodo (incluye 0). */
     prestaciones_uso: Array<{ nombre: string; total: number }>;
     prestaciones_periodo: "mes" | "anio" | "historico";
+    turnos_por_mes: Array<{ anio: number; mes: number; total: number }>;
+    turnos_reservados_vencidos: number;
     turnos_recientes: Array<{
       id: number;
       socio: string;
@@ -70,22 +58,74 @@ type DashboardResponse = {
 };
 
 type DashboardData = NonNullable<DashboardResponse["data"]>;
+type DashboardAlert = {
+  id: string;
+  message: string;
+  href: string;
+};
+
+const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 const estadoLabel: Record<DashboardEstadoTurno, string> = {
-  RESERVADO: "Reservado",
+  RESERVADO: "Pendiente",
   ATENDIDO: "Atendido",
   CANCELADO: "Cancelado",
   AUSENTE: "Ausente",
 };
 
-function labelPrestacionesPeriodo(periodo: DashboardData["prestaciones_periodo"]) {
-  if (periodo === "anio") return "Año en curso (atenciones atendidas)";
-  return "Periodo no configurado";
+const statusToneByEstado: Record<DashboardEstadoTurno, "reservado" | "atendido" | "cancelado" | "ausente"> = {
+  RESERVADO: "reservado",
+  ATENDIDO: "atendido",
+  CANCELADO: "cancelado",
+  AUSENTE: "ausente",
+};
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <Skeleton className="h-44 rounded-[24px]" />
+        <Skeleton className="h-44 rounded-[24px]" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Skeleton className="h-36 rounded-[24px]" />
+        <Skeleton className="h-36 rounded-[24px]" />
+        <Skeleton className="h-36 rounded-[24px]" />
+        <Skeleton className="h-36 rounded-[24px]" />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Skeleton className="h-[320px] rounded-[24px]" />
+        <Skeleton className="h-[320px] rounded-[24px]" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <Skeleton className="h-[340px] rounded-[24px]" />
+        <Skeleton className="h-[340px] rounded-[24px]" />
+      </div>
+    </div>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: Record<string, string | number> }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg">
+      {label ? <p className="font-medium">{label}</p> : null}
+      <p className="text-slate-500 dark:text-slate-400">{payload[0].value}</p>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
   const { role } = useUser();
-  const anioEnCurso = new Date().getFullYear();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,10 +136,7 @@ export default function DashboardPage() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch("/api/dashboard", {
-          method: "GET",
-          cache: "no-store",
-        });
+        const response = await fetch("/api/dashboard", { method: "GET", cache: "no-store" });
         const data = (await response.json()) as DashboardResponse;
 
         if (!response.ok || !data.success || !data.data) {
@@ -119,313 +156,311 @@ export default function DashboardPage() {
 
   if (!canAccessModule(role, "dashboard")) {
     return (
-      <Card className="bg-white">
+      <Card>
         <CardHeader>
           <CardTitle>Acceso restringido</CardTitle>
+          <CardDescription>Este perfil no puede ver el dashboard.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-600">No tienes permisos para acceder a este modulo.</p>
-        </CardContent>
       </Card>
     );
   }
 
   if (isLoading) {
-    return <Loading label="Cargando dashboard..." />;
+    return <DashboardSkeleton />;
   }
 
   if (error) {
     return (
-      <Card className="bg-white">
+      <Card>
         <CardHeader>
-          <CardTitle>Error al cargar dashboard</CardTitle>
+          <CardTitle>No pudimos cargar el dashboard</CardTitle>
+          <CardDescription>{error}</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-red-600">Error: {error}</p>
-        </CardContent>
       </Card>
     );
   }
 
   if (!dashboardData) {
     return (
-      <Card className="bg-white">
+      <Card>
         <CardHeader>
-          <CardTitle>Dashboard sin datos</CardTitle>
+          <CardTitle>Sin datos</CardTitle>
+          <CardDescription>No hay informacion disponible para mostrar.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-600">No se recibieron datos del backend.</p>
-        </CardContent>
       </Card>
     );
   }
 
-  const actividadReciente = dashboardData.turnos_recientes.map((turno) => {
-    return `${turno.socio} - ${turno.prestacion} (${turno.estado})`;
-  });
+  const actividadReciente = dashboardData.turnos_recientes.slice(0, 5).map((turno) => ({
+    ...turno,
+    normalizedEstado: turno.estado.toUpperCase() as DashboardEstadoTurno,
+  }));
+
+  const prestacionesChart = dashboardData.prestaciones_top
+    .filter((item) => item.total > 0)
+    .slice(0, 5)
+    .sort((a, b) => b.total - a.total)
+    .map((item) => ({
+      nombre: item.nombre,
+      total: item.total,
+      corto: item.nombre.length > 24 ? `${item.nombre.slice(0, 24)}...` : item.nombre,
+    }));
+
+  const turnosPorMesChart = dashboardData.turnos_por_mes.map((item) => ({
+    mes: monthLabels[item.mes - 1] ?? String(item.mes),
+    total: item.total,
+  }));
+
+  const turnosPendientes = dashboardData.turnos_reservados_vencidos;
+  const turnosAusentes = actividadReciente.filter((turno) => turno.normalizedEstado === "AUSENTE").length;
+
+  const alerts: DashboardAlert[] = [
+    turnosPendientes > 0
+      ? {
+          id: "turnos-vencidos",
+          message: `${turnosPendientes} turnos reservados ya vencieron su horario y deben actualizarse de estado.`,
+          href: "/turnos?alerta=vencidos",
+        }
+      : null,
+    turnosAusentes > 0
+      ? {
+          id: "turnos-ausentes",
+          message: `${turnosAusentes} turnos marcados como ausentes.`,
+          href: "/turnos?estado=AUSENTE",
+        }
+      : null,
+    dashboardData.hijos_mayores_18 > 0
+      ? {
+          id: "hijos-mayores",
+          message: `${dashboardData.hijos_mayores_18} hijos cumplieron mayoría de edad y deben revisar plan propio.`,
+          href: "/socios?foco=hijos-mayores",
+        }
+      : null,
+  ].filter(Boolean) as DashboardAlert[];
+
+  const chartGridStroke = "rgba(148,163,184,0.14)";
 
   return (
-    <div className="mx-auto space-y-6">
-      <PageHeader title="Panel de control" breadcrumbs={["panel gerencial"]} />
-
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="bg-white">
-          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-2">
-            <div className="flex items-center gap-4">
-              <HeartPulse className="h-10 w-10 text-pfc-600" />
-              <div className="space-y-1">
-                <h2 className="font-display text-3xl text-pfcText-primary">Visión general del sistema PFC</h2>
-                <p className="text-sm text-pfcText-secondary">
-                  Métricas clave para recepción y directivos con foco en cobertura y operación diaria.
-                </p>
-              </div>
-            </div>
-            <Link href="/turnos/nuevo">
-              <span className="inline-flex h-10 items-center rounded-lg bg-[#0D6E5A] px-4 text-sm font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#0B5B4B]">
-                <Calendar className="mr-2 h-4 w-4" />
+    <div className="space-y-6">
+      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Resumen del dia</CardTitle>
+            <CardDescription>Lo mas importante para empezar a trabajar sin perder tiempo.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
+              Desde aca podes ver el estado general, detectar tendencias y hacer la accion principal del sistema.
+            </p>
+            <Link href="/turnos/nuevo" className="inline-flex">
+              <button className="inline-flex h-12 items-center rounded-2xl bg-primary px-5 text-sm font-medium text-primary-foreground shadow-[0_10px_24px_rgba(16,185,129,0.18)] transition-colors hover:brightness-105">
+                <Plus className="mr-2 h-4 w-4" />
                 Crear turno
-              </span>
+              </button>
             </Link>
           </CardContent>
         </Card>
-      </motion.div>
 
-      <section>
-        <p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-pfcText-muted">
-          Indicadores principales
-        </p>
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Personas cubiertas"
-            value={dashboardData.personas_cubiertas}
-            description="Personas incluidas en el plan PFC."
-            icon={Users}
-            tone="teal"
-          />
-          <MetricCard
-            label="Socios titulares"
-            value={dashboardData.socios_titulares}
-            description="Socios titulares del plan."
-            icon={Users}
-            tone="blue"
-          />
-          <MetricCard
-            label="Socios adherentes"
-            value={dashboardData.socios_adherentes}
-            description="Adherentes asociados al titular."
-            icon={Users}
-            tone="teal"
-          />
-          <MetricCard
-            label="Turnos del año"
-            value={dashboardData.turnos_hoy}
-            description={`Turnos registrados en ${anioEnCurso}.`}
-            icon={Calendar}
-            tone="blue"
-          />
-          <MetricCard
-            label="Profesionales activos"
-            value={dashboardData.profesionales_activos}
-            description="Profesionales con agenda activa."
-            icon={Stethoscope}
-            tone="teal"
-          />
-          <MetricCard
-            label="Prestaciones registradas"
-            value={dashboardData.prestaciones_mes}
-            description={`Atenciones atendidas en ${anioEnCurso}.`}
-            icon={HeartPulse}
-            tone="teal"
-          />
-          <MetricCard
-            label="HIJO/A mayor de 18"
-            value={dashboardData.hijos_mayores_18}
-            description="Deben pagar cuota y acceder a beneficios propios."
-            icon={Users}
-            tone="amber"
-            accentWarning
-          />
-          <MetricCard
-            label="Beneficio titular"
-            value={dashboardData.adherentes_beneficio_titular}
-            description="Cónyuge, otros e hijos menores de 18."
-            icon={Users}
-            tone="teal"
-          />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Alertas</CardTitle>
+            <CardDescription>Mostramos solo lo que necesita atencion.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {alerts.length === 0 ? (
+              <div className="rounded-[20px] border border-emerald-300/16 bg-emerald-400/10 px-4 py-4 text-sm text-emerald-800 dark:text-emerald-100">
+                No hay alertas importantes en este momento.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {alerts.map((alert) => (
+                  <Link
+                    key={alert.id}
+                    href={alert.href}
+                    className="flex items-start gap-3 rounded-[20px] border border-amber-300/14 bg-amber-400/10 px-4 py-4 transition-colors hover:bg-amber-400/16"
+                  >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" />
+                    <p className="text-sm leading-6 text-amber-800 dark:text-amber-100">{alert.message}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="bg-white shadow-sm">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Cantidad total"
+          value={dashboardData.turnos_hoy}
+          description="de turnos registrados."
+          icon={Calendar}
+          tone="teal"
+        />
+        <MetricCard
+          label="Turnos a revisar"
+          value={turnosPendientes}
+          description="Reservados vencidos que deben actualizar estado."
+          icon={Clock3}
+          tone={turnosPendientes > 0 ? "amber" : "slate"}
+        />
+        <MetricCard
+          label="Socios activos"
+          value={dashboardData.socios_titulares}
+          description="Socios titulares con actividad en el sistema."
+          icon={Users}
+          tone="slate"
+        />
+        <MetricCard
+          label="Personas cubiertas"
+          value={dashboardData.personas_cubiertas}
+          description="Total de personas dentro del plan."
+          icon={Users}
+          tone="slate"
+        />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Turnos por mes</CardTitle>
+            <CardDescription>Vista simple de la tendencia de los ultimos 12 meses.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {turnosPorMesChart.length === 0 ? (
+              <EmptyState message="No hay datos para mostrar este grafico." />
+            ) : (
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={turnosPorMesChart} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke={chartGridStroke} />
+                    <XAxis
+                      dataKey="mes"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      allowDecimals={false}
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                      width={34}
+                    />
+                    <Tooltip content={({ active, payload, label }) => <ChartTooltip active={active} payload={payload as never} label={String(label ?? "")} />} />
+                    <Line
+                      type="monotone"
+                      dataKey="total"
+                      stroke="var(--chart-1)"
+                      strokeWidth={3}
+                      dot={{ r: 3, fill: "var(--chart-1)" }}
+                      activeDot={{ r: 4, fill: "var(--chart-1)" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Prestaciones mas utilizadas</CardTitle>
+            <CardDescription>Top simple para entender la demanda sin tablas complejas.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {prestacionesChart.length === 0 ? (
+              <EmptyState message="No hay prestaciones con actividad para mostrar." />
+            ) : (
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={prestacionesChart} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 0 }}>
+                    <CartesianGrid horizontal={false} vertical={false} />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      type="category"
+                      dataKey="corto"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                      width={140}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const row = payload[0].payload as { nombre: string; total: number };
+                        return <ChartTooltip active payload={[{ value: row.total, payload: row }]} label={row.nombre} />;
+                      }}
+                    />
+                    <Bar dataKey="total" radius={[0, 10, 10, 0]} barSize={18}>
+                      {prestacionesChart.map((item) => (
+                        <Cell key={item.nombre} fill="var(--chart-1)" opacity={0.9} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card>
           <CardHeader>
             <CardTitle>Actividad reciente</CardTitle>
+            <CardDescription>Ultimos movimientos, en una lista corta y facil de leer.</CardDescription>
           </CardHeader>
           <CardContent>
             {actividadReciente.length === 0 ? (
-              <EmptyState />
+              <EmptyState message="Todavia no hay actividad reciente." />
             ) : (
-              <ul className="space-y-3 text-sm text-slate-700">
-                {actividadReciente.map((item) => (
-                  <li key={item} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white shadow-sm">
-          <CardHeader className="space-y-1">
-            <CardTitle>Prestaciones más utilizadas</CardTitle>
-            <p className="text-sm text-slate-600">
-              Gráfico anual {anioEnCurso}: las 10 prestaciones con más atenciones (
-              {labelPrestacionesPeriodo(dashboardData.prestaciones_periodo)}). El listado debajo incluye el catálogo
-              completo.
-            </p>
-          </CardHeader>
-          <CardContent className="h-80 min-h-[320px]">
-            {dashboardData.prestaciones_top.length === 0 ? (
-              <EmptyState message="No hay atenciones atendidas en el periodo para armar el gráfico." />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                  <Pie
-                    data={dashboardData.prestaciones_top}
-                    dataKey="total"
-                    nameKey="nombre"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={56}
-                    outerRadius={96}
-                    paddingAngle={2}
-                    stroke="#fff"
-                    strokeWidth={1}
-                  >
-                    {dashboardData.prestaciones_top.map((_, index) => (
-                      <Cell key={`slice-${index}`} fill={PRESTACIONES_PIE_COLORS[index % PRESTACIONES_PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null;
-                      const row = payload[0].payload as { nombre: string; total: number };
-                      return (
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
-                          <p className="font-medium text-slate-900">{row.nombre}</p>
-                          <p className="text-slate-600">{row.total} atenciones</p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    layout="horizontal"
-                    formatter={(value) => <span className="text-xs text-slate-700">{value}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* <Card className="bg-white shadow-sm">
-        <CardHeader className="space-y-1">
-          <CardTitle>Todas las prestaciones</CardTitle>
-          <p className="text-sm text-slate-600">
-            Total de atenciones atendidas por prestación ({labelPrestacionesPeriodo(dashboardData.prestaciones_periodo)}
-            ). Ordenado por cantidad descendente.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {dashboardData.prestaciones_uso.length === 0 ? (
-            <EmptyState message="No hay prestaciones en el catálogo." />
-          ) : (
-            <div className="max-h-[min(480px,60vh)] overflow-auto rounded-lg border border-slate-200">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Prestación</TableHead>
-                    <TableHead className="text-right">Atenciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dashboardData.prestaciones_uso.map((row, index) => (
-                    <TableRow key={`${row.nombre}-${index}`}>
-                      <TableCell className="text-slate-500">{index + 1}</TableCell>
-                      <TableCell className="font-medium text-slate-900">{row.nombre}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.total}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card> */}
-
-      <Card className="bg-white shadow-sm">
-        <CardHeader>
-          <CardTitle>Turnos recientes</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {dashboardData.turnos_recientes.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Socio</TableHead>
-                  <TableHead>Profesional</TableHead>
-                  <TableHead>Prestacion</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Hora</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dashboardData.turnos_recientes.map((turno) => {
-                  const normalizedEstado = turno.estado.toUpperCase() as DashboardEstadoTurno;
-                  const historialHref = `/socios/${Number(turno.cod_soc)}/${Number(turno.adherente_codigo)}/historial`;
-                  return (
-                  <TableRow key={turno.id}>
-                    <TableCell>
-                      <Link
-                        href={historialHref}
-                        className="font-medium text-pfc-700 underline-offset-2 hover:text-pfc-800 hover:underline"
-                      >
-                        {turno.socio}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{turno.profesional}</TableCell>
-                    <TableCell>{turno.prestacion}</TableCell>
-                    <TableCell>
-                      <DataBadge
-                        kind={
-                          normalizedEstado === "RESERVADO"
-                            ? "reservado"
-                            : normalizedEstado === "ATENDIDO"
-                              ? "atendido"
-                              : normalizedEstado === "AUSENTE"
-                                ? "ausente"
-                                : "cancelado"
-                        }
-                      >
-                        {estadoLabel[normalizedEstado] ?? turno.estado}
+              <div className="space-y-3">
+                {actividadReciente.map((turno) => (
+                  <div key={turno.id} className="rounded-[20px] border border-border bg-card px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{turno.socio}</p>
+                      <DataBadge kind={statusToneByEstado[turno.normalizedEstado]}>
+                        {estadoLabel[turno.normalizedEstado] ?? turno.estado}
                       </DataBadge>
-                    </TableCell>
-                    <TableCell>{turno.fecha}</TableCell>
-                    <TableCell>{turno.hora}</TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                      {turno.prestacion} con {turno.profesional}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {turno.fecha} a las {turno.hora}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Accesos rapidos</CardTitle>
+            <CardDescription>Entradas simples a las tareas mas frecuentes.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Link href="/turnos" className="block rounded-[20px] border border-border bg-card px-4 py-4 transition-colors hover:bg-muted">
+              <p className="text-sm font-medium text-foreground">Ver turnos</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Revisar, buscar y gestionar turnos del dia.</p>
+            </Link>
+            <Link href="/socios" className="block rounded-[20px] border border-border bg-card px-4 py-4 transition-colors hover:bg-muted">
+              <p className="text-sm font-medium text-foreground">Ver socios</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Consultar datos de cobertura e historial.</p>
+            </Link>
+            <Link
+              href="/ortopedia/prestamos"
+              className="block rounded-[20px] border border-border bg-card px-4 py-4 transition-colors hover:bg-muted"
+            >
+              <p className="text-sm font-medium text-foreground">Ver prestamos</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Controlar prestamos y devoluciones.</p>
+            </Link>
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

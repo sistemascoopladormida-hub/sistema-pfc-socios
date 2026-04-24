@@ -17,14 +17,8 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Loading } from "@/components/ui/loading";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page-header";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type ProfesionalApi = {
@@ -82,46 +76,17 @@ export default function ProfesionalesPage() {
     bootstrap();
   }, []);
 
-  if (!canAccessModule(role, "profesionales")) {
-    return (
-      <Card className="bg-white">
-        <CardHeader>
-          <CardTitle>Acceso restringido</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-600">No tienes permisos para acceder a este modulo.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   async function fetchProfesionales() {
     const response = await fetch("/api/profesionales", { cache: "no-store" });
-    const data = (await response.json()) as {
-      success: boolean;
-      data?: ProfesionalApi[];
-      error?: string;
-    };
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.error ?? "No se pudieron cargar profesionales");
-    }
-
+    const data = (await response.json()) as { success: boolean; data?: ProfesionalApi[]; error?: string };
+    if (!response.ok || !data.success) throw new Error(data.error ?? "No se pudieron cargar profesionales");
     setProfesionales(data.data ?? []);
   }
 
   async function fetchEspecialidades() {
     const response = await fetch("/api/especialidades", { cache: "no-store" });
-    const data = (await response.json()) as {
-      success: boolean;
-      data?: EspecialidadApi[];
-      error?: string;
-    };
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.error ?? "No se pudieron cargar especialidades");
-    }
-
+    const data = (await response.json()) as { success: boolean; data?: EspecialidadApi[]; error?: string };
+    if (!response.ok || !data.success) throw new Error(data.error ?? "No se pudieron cargar especialidades");
     setEspecialidades(data.data ?? []);
   }
 
@@ -152,16 +117,13 @@ export default function ProfesionalesPage() {
       toast.error("Completa nombre y especialidad");
       return;
     }
-
     if (!Number.isInteger(duracionTurno) || duracionTurno <= 0) {
       toast.error("La duracion del turno debe ser un numero valido");
       return;
     }
 
     const method = editingProfesional ? "PUT" : "POST";
-    const endpoint = editingProfesional
-      ? `/api/profesionales/${editingProfesional.id}`
-      : "/api/profesionales";
+    const endpoint = editingProfesional ? `/api/profesionales/${editingProfesional.id}` : "/api/profesionales";
 
     const response = await fetch(endpoint, {
       method,
@@ -187,20 +149,28 @@ export default function ProfesionalesPage() {
   }
 
   async function handleDelete(item: ProfesionalApi) {
-    const confirmed = window.confirm("¿Desea eliminar este profesional?");
-    if (!confirmed) return;
-
-    const response = await fetch(`/api/profesionales/${item.id}`, {
-      method: "DELETE",
-    });
+    if (!window.confirm("Desea eliminar este profesional?")) return;
+    const response = await fetch(`/api/profesionales/${item.id}`, { method: "DELETE" });
     const data = (await response.json()) as { success: boolean; error?: string };
     if (!response.ok || !data.success) {
       toast.error(data.error ?? "No se pudo eliminar el profesional");
       return;
     }
-
     toast.success("Profesional eliminado");
     await fetchProfesionales();
+  }
+
+  if (!canAccessModule(role, "profesionales")) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Acceso restringido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-500">No tienes permisos para acceder a este modulo.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (loading) {
@@ -208,156 +178,170 @@ export default function ProfesionalesPage() {
   }
 
   return (
-    <Card className="bg-white shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
-        <CardTitle className="flex items-center gap-2">
-          <UserRound className="h-5 w-5 text-coopBlue" />
-          Listado de Profesionales
-        </CardTitle>
+    <div className="module-shell space-y-6">
+      <PageHeader
+        title="Profesionales"
+        breadcrumbs={["Configuracion medica"]}
+        rightSlot={
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger
+              render={
+                <Button onClick={openCreateModal}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo profesional
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>{editingProfesional ? "Editar profesional" : "Nuevo profesional"}</DialogTitle>
+                <DialogDescription>Completa los datos principales del profesional.</DialogDescription>
+              </DialogHeader>
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger
-            render={
-              <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Profesional
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle>{editingProfesional ? "Editar Profesional" : "Nuevo Profesional"}</DialogTitle>
-              <DialogDescription>Registrar profesional para la gestion de turnos PFC.</DialogDescription>
-            </DialogHeader>
+              <div className="field-grid field-grid-2">
+                <label className="grid gap-2">
+                  <span className="field-label">Nombre completo</span>
+                  <Input value={form.nombre} onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))} />
+                </label>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm">
-                <span>Nombre Completo *</span>
-                <Input
-                  value={form.nombre}
-                  onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))}
-                />
-              </label>
+                <label className="grid gap-2">
+                  <span className="field-label">Especialidad</span>
+                  <select
+                    className="h-11 rounded-2xl border border-border bg-input px-3 text-sm text-foreground outline-none"
+                    value={form.especialidad_id}
+                    onChange={(event) => setForm((prev) => ({ ...prev, especialidad_id: event.target.value }))}
+                  >
+                    <option value="">Seleccionar</option>
+                    {especialidades.map((item) => (
+                      <option key={item.id} value={String(item.id)}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="grid gap-1 text-sm">
-                <span>Especialidad *</span>
-                <select
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.especialidad_id}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, especialidad_id: event.target.value }))
-                  }
-                >
-                  <option value="">Seleccionar</option>
-                  {especialidades.map((item) => (
-                    <option key={item.id} value={String(item.id)}>
-                      {item.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label className="grid gap-2">
+                  <span className="field-label">Pacientes mensuales</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.pacientes_mensuales}
+                    onChange={(event) => setForm((prev) => ({ ...prev, pacientes_mensuales: event.target.value }))}
+                  />
+                </label>
 
-              <label className="grid gap-1 text-sm">
-                <span>Pacientes mensuales</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.pacientes_mensuales}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, pacientes_mensuales: event.target.value }))
-                  }
-                />
-              </label>
+                <label className="grid gap-2">
+                  <span className="field-label">Duracion del turno</span>
+                  <Input
+                    type="number"
+                    min={5}
+                    step={5}
+                    value={form.duracion_turno}
+                    onChange={(event) => setForm((prev) => ({ ...prev, duracion_turno: event.target.value }))}
+                  />
+                </label>
+              </div>
 
-              <label className="grid gap-1 text-sm">
-                <span>Duracion turno (min) *</span>
-                <Input
-                  type="number"
-                  min={5}
-                  step={5}
-                  value={form.duracion_turno}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, duracion_turno: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
+              <div className="flex justify-end">
+                <Button onClick={handleSave}>{editingProfesional ? "Actualizar" : "Guardar"}</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
-            <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
-              {editingProfesional ? "Actualizar" : "Guardar"}
-            </Button>
-          </DialogContent>
-        </Dialog>
-      </CardHeader>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UserRound className="h-5 w-5 text-primary" />
+            Listado de profesionales
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {profesionales.length === 0 ? (
+            <EmptyState message="No hay profesionales registrados." />
+          ) : (
+            <>
+              <div className="hidden min-[1400px]:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Profesional</TableHead>
+                      <TableHead>Especialidad</TableHead>
+                      <TableHead>Cupo mensual</TableHead>
+                      <TableHead>Duracion</TableHead>
+                      <TableHead>Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {profesionales.map((profesional) => (
+                      <TableRow key={profesional.id}>
+                        <TableCell className="font-medium text-foreground">{profesional.nombre}</TableCell>
+                        <TableCell>{profesional.especialidad}</TableCell>
+                        <TableCell>
+                          {Number.isFinite(Number(profesional.pacientes_mensuales))
+                            ? `${Number(profesional.turnos_mes ?? 0)} / ${Number(profesional.pacientes_mensuales)}`
+                            : "No definido"}
+                        </TableCell>
+                        <TableCell>{profesional.duracion_turno ? `${profesional.duracion_turno} min` : "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => openEditModal(profesional)}>
+                              <Pencil className="mr-1 h-4 w-4" />
+                              Editar
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDelete(profesional)}>
+                              <Trash2 className="mr-1 h-4 w-4" />
+                              Eliminar
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-      <CardContent>
-        {profesionales.length === 0 ? (
-          <EmptyState message="No hay profesionales registrados." />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Profesional</TableHead>
-                <TableHead>Especialidad</TableHead>
-                <TableHead>Cupo mensual</TableHead>
-                <TableHead>Duracion turno</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {profesionales.map((profesional) => (
-                <TableRow key={profesional.id}>
-                  <TableCell>{profesional.nombre}</TableCell>
-                  <TableCell>{profesional.especialidad}</TableCell>
-                  <TableCell>
-                    {Number.isFinite(Number(profesional.pacientes_mensuales)) ? (
-                      <div className="space-y-1 text-sm">
-                        <p>
-                          {Number(profesional.turnos_mes ?? 0)} / {Number(profesional.pacientes_mensuales)} usados
-                        </p>
-                        <p
-                          className={
-                            Number(profesional.cupo_restante ?? 0) <= 0
-                              ? "font-medium text-red-600"
-                              : "text-slate-600"
-                          }
-                        >
-                          Restantes: {Math.max(Number(profesional.cupo_restante ?? 0), 0)}
+              <div className="space-y-3 min-[1400px]:hidden">
+                {profesionales.map((profesional) => (
+                  <div key={profesional.id} className="data-card space-y-4">
+                    <div className="space-y-1">
+                      <p className="text-base font-semibold text-foreground">{profesional.nombre}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{profesional.especialidad}</p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="field-help">Cupo mensual</p>
+                        <p className="field-label">
+                          {Number.isFinite(Number(profesional.pacientes_mensuales))
+                            ? `${Number(profesional.turnos_mes ?? 0)} / ${Number(profesional.pacientes_mensuales)}`
+                            : "No definido"}
                         </p>
                       </div>
-                    ) : (
-                      "No definido"
-                    )}
-                  </TableCell>
-                  <TableCell>{profesional.duracion_turno ? `${profesional.duracion_turno} min` : "-"}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => openEditModal(profesional)}
-                      >
-                        <Pencil className="h-4 w-4" />
+                      <div>
+                        <p className="field-help">Duracion</p>
+                        <p className="field-label">{profesional.duracion_turno ? `${profesional.duracion_turno} min` : "-"}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" className="sm:flex-1" onClick={() => openEditModal(profesional)}>
+                        <Pencil className="mr-2 h-4 w-4" />
                         Editar
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="gap-1"
-                        onClick={() => handleDelete(profesional)}
-                      >
-                        <Trash2 className="h-4 w-4" />
+                      <Button variant="destructive" className="sm:flex-1" onClick={() => handleDelete(profesional)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
                         Eliminar
                       </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, LogOut, Menu, Settings, UserCircle2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { ChevronDown, ChevronRight, LogOut, Menu, Plus, Settings, UserCircle2 } from "lucide-react";
 
-import { roleLabel, simulatedUserByRole, useUser } from "@/lib/user-context";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { navigationItems } from "@/components/layout/navigation-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,25 +16,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { roleLabel, simulatedUserByRole, useUser } from "@/lib/user-context";
+
+type HeaderProps = {
+  onMenuClick: () => void;
+  onOpenCommandPalette: () => void;
+};
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Panel de control",
-  "/socios": "Socios PFC",
+  "/dashboard": "Inicio",
+  "/socios": "Socios",
   "/turnos": "Turnos",
-  "/ortopedia": "Elementos Ortopédicos",
-  "/ortopedia/gestion": "Gestión de Elementos",
-  "/ortopedia/asignacion": "Asignación de Elementos",
-  "/ortopedia/stock": "Stock de Ortopedia",
-  "/ortopedia/prestamos": "Préstamos de Ortopedia",
-  "/agenda-profesional": "Agenda Profesional",
+  "/turnos/nuevo": "Crear turno",
+  "/ortopedia": "Ortopedia",
+  "/ortopedia/gestion": "Gestión de elementos",
+  "/ortopedia/asignacion": "Asignación de elementos",
+  "/ortopedia/stock": "Stock",
+  "/ortopedia/prestamos": "Préstamos",
+  "/agenda-profesional": "Agenda profesional",
   "/profesionales": "Profesionales",
   "/especialidades": "Especialidades",
   "/prestaciones": "Prestaciones",
   "/reportes": "Reportes",
-};
-
-type HeaderProps = {
-  onMenuClick: () => void;
 };
 
 export function Header({ onMenuClick }: HeaderProps) {
@@ -45,15 +49,19 @@ export function Header({ onMenuClick }: HeaderProps) {
   const title =
     pageTitles[pathname] ??
     Object.entries(pageTitles).find(([key]) => pathname.startsWith(`${key}/`))?.[1] ??
-    "Panel de Gestion";
+    "PFC";
 
-  const userDisplay = `${roleLabel[role]} - ${simulatedUserByRole[role]}`;
-  const breadcrumbs = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
+  const breadcrumbs = useMemo(() => {
+    const parts = pathname.split("/").filter(Boolean);
+    return parts.map((part, index) => {
+      const href = `/${parts.slice(0, index + 1).join("/")}`;
+      const label = navigationItems.find((item) => item.href === href)?.label ?? part.replace(/-/g, " ");
+      return { href, label };
+    });
+  }, [pathname]);
 
   useEffect(() => {
-    const onScroll = () => {
-      setElevated(window.scrollY > 8);
-    };
+    const onScroll = () => setElevated(window.scrollY > 10);
     onScroll();
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
@@ -69,67 +77,77 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header
-      className={`glass-header py-2 flex flex-row justify-between items-center sticky top-0 z-20 border-b border-pfcBorder px-6 transition-shadow ${
-        elevated ? "shadow-sm" : ""
+      className={`glass-header sticky top-0 z-20 border-b border-border px-4 py-4 md:px-6 ${
+        elevated ? "shadow-[0_10px_24px_rgba(2,6,23,0.24)]" : ""
       }`}
     >
-      <div className="flex items-center gap-3">
-        <div className="flex h-14 items-center gap-3">
-          <Button variant="outline" size="icon-sm" className="md:hidden" onClick={onMenuClick}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Button variant="ghost" size="icon-sm" className="md:hidden" onClick={onMenuClick}>
             <Menu className="h-4 w-4" />
           </Button>
-          <div className="">
-            <motion.h1
-              key={title}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18 }}
-              className="font-display text-[22px] leading-none text-pfcText-primary"
-            >
-              {title}
-            </motion.h1>
-            <div className="mt-1 hidden items-center gap-1 text-[11px] text-pfcText-muted md:flex">
+
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>Inicio</span>
               {breadcrumbs.map((crumb) => (
-                <span key={crumb} className="flex items-center gap-1">
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="capitalize">{crumb.replace("-", " ")}</span>
+                <span key={crumb.href} className="flex items-center gap-2">
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  <span className="truncate">{crumb.label}</span>
                 </span>
               ))}
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+              <Badge className="rounded-full border border-border bg-muted px-3 py-1 text-xs text-foreground">
+                {roleLabel[role]}
+              </Badge>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex h-14 items-center gap-3">
-        <Badge className="rounded-lg bg-pfc-100 text-pfc-700">{roleLabel[role]}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <ThemeToggle />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" className="gap-3 px-2" />}>
-            <div className="flex items-center gap-3">
-              <span className="hidden text-sm text-pfcText-secondary lg:inline">{userDisplay}</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pfc-100 ring-1 ring-pfc-200">
-                <UserCircle2 className="h-5 w-5 text-slate-700" />
+          <Link href="/turnos/nuevo">
+            <Button className="h-11 px-4">
+              <Plus className="mr-2 h-4 w-4" />
+              Crear turno
+            </Button>
+          </Link>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="outline" className="h-11 px-3 text-foreground" />}
+            >
+              <div className="flex items-center gap-3">
+                <span className="hidden text-left lg:block">
+                  <span className="block text-sm font-medium text-foreground">{simulatedUserByRole[role]}</span>
+                  <span className="block text-xs text-muted-foreground">{roleLabel[role]}</span>
+                </span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-muted text-foreground">
+                  <UserCircle2 className="h-5 w-5" />
+                </span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
               </div>
-              <ChevronDown className="h-4 w-4 text-slate-500" />
-            </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>
-              <UserCircle2 className="mr-2 h-4 w-4" />
-              Perfil
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              Configuracion
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar sesion
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="glass-panel w-56 border-border bg-popover text-popover-foreground">
+              <DropdownMenuItem className="text-popover-foreground focus:bg-muted focus:text-foreground">
+                <Settings className="mr-2 h-4 w-4" />
+                Configuracion
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-border" />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={handleLogout}
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Cerrar sesión
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );

@@ -36,6 +36,13 @@ export function Sidebar({
     () => navigationItems.filter((item) => canAccessModule(role, item.module)),
     [role]
   );
+  const groupedItems = useMemo(
+    () => ({
+      pfc: visibleItems.filter((item) => item.group === "Core" || item.group === "Operaciones" || item.group === "Analitica"),
+      ortopedia: visibleItems.filter((item) => item.group === "Ortopedia"),
+    }),
+    [visibleItems]
+  );
 
   return (
     <>
@@ -94,8 +101,27 @@ export function Sidebar({
           ) : null}
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
-          {visibleItems.map((item) => {
+        <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+          {([
+            { key: "pfc", label: "Gestion PFC", items: groupedItems.pfc },
+            { key: "ortopedia", label: "Prestacion de Ortopedia", items: groupedItems.ortopedia },
+          ] as const).map((section) => {
+            if (section.items.length === 0) return null;
+            return (
+              <div key={section.key} className="space-y-2">
+                {!collapsed ? (
+                  <p
+                    className={cn(
+                      "px-2 text-[11px] font-semibold uppercase tracking-wide",
+                      section.key === "ortopedia"
+                        ? "text-violet-600 dark:text-violet-300"
+                        : "text-slate-500 dark:text-slate-400"
+                    )}
+                  >
+                    {section.label}
+                  </p>
+                ) : null}
+                {section.items.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const badgeValue = item.module === "turnos" && turnosFuturos > 0 ? turnosFuturos : null;
@@ -108,13 +134,21 @@ export function Sidebar({
                 title={collapsed ? item.label : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors",
-                  isActive ? "pill-active text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  isActive
+                    ? section.key === "ortopedia"
+                      ? "bg-violet-500/10 text-foreground ring-1 ring-violet-500/20"
+                      : "pill-active text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <span
                   className={cn(
                     "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl",
-                    isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                    isActive
+                      ? section.key === "ortopedia"
+                        ? "bg-violet-500/15 text-violet-600 dark:text-violet-300"
+                        : "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
                   )}
                 >
                   <Icon className="h-[18px] w-[18px]" />
@@ -133,6 +167,9 @@ export function Sidebar({
                   </span>
                 ) : null}
               </Link>
+            );
+                })}
+              </div>
             );
           })}
         </nav>

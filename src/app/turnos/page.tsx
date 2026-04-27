@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarPlus2, Eye, Search, Trash2 } from "lucide-react";
+import { CalendarPlus2, Eye, FileDown, Printer, Search, Trash2 } from "lucide-react";
 
 import { TurnoDetalleModal } from "@/components/turnos/TurnoDetalleModal";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
 
 type TurnoEstado = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
 type EstadoFilter = "TODOS" | TurnoEstado;
@@ -48,10 +49,17 @@ export default function TurnosPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [turnos, setTurnos] = useState<TurnoRow[]>([]);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTermDraft, setSearchTermDraft] = useState("");
+  const [searchTermFilter, setSearchTermFilter] = useState("");
+  const [estadoDraft, setEstadoDraft] = useState<EstadoFilter>("TODOS");
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("TODOS");
-  const [fechaFilter, setFechaFilter] = useState("");
+  const [fechaDesdeDraft, setFechaDesdeDraft] = useState("");
+  const [fechaDesdeFilter, setFechaDesdeFilter] = useState("");
+  const [fechaHastaDraft, setFechaHastaDraft] = useState("");
+  const [fechaHastaFilter, setFechaHastaFilter] = useState("");
+  const [prestacionDraft, setPrestacionDraft] = useState("");
   const [prestacionFilter, setPrestacionFilter] = useState("");
+  const [profesionalDraft, setProfesionalDraft] = useState("");
   const [profesionalFilter, setProfesionalFilter] = useState("");
   const [onlyOverdueReservados, setOnlyOverdueReservados] = useState(false);
 
@@ -83,9 +91,11 @@ export default function TurnosPage() {
     const estadoParam = String(searchParams.get("estado") ?? "").toUpperCase();
     const alertaParam = String(searchParams.get("alerta") ?? "").toLowerCase();
     if (estadoParam === "RESERVADO" || estadoParam === "ATENDIDO" || estadoParam === "AUSENTE" || estadoParam === "CANCELADO") {
+      setEstadoDraft(estadoParam as EstadoFilter);
       setEstadoFilter(estadoParam as EstadoFilter);
     }
     if (alertaParam === "vencidos") {
+      setEstadoDraft("RESERVADO");
       setEstadoFilter("RESERVADO");
       setOnlyOverdueReservados(true);
     }
@@ -227,11 +237,15 @@ export default function TurnosPage() {
   const prestacionesOpciones = useMemo(() => {
     const set = new Set<string>();
     for (const t of turnos) {
+      const profesional = String(t.profesional ?? "").trim();
+      if (profesionalDraft && profesional !== profesionalDraft) {
+        continue;
+      }
       const value = String(t.prestacion ?? "").trim();
       if (value) set.add(value);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  }, [turnos]);
+  }, [turnos, profesionalDraft]);
 
   const profesionalesOpciones = useMemo(() => {
     const set = new Set<string>();
@@ -242,8 +256,96 @@ export default function TurnosPage() {
     return [...set].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [turnos]);
 
+  useEffect(() => {
+    if (!prestacionDraft) return;
+    if (!prestacionesOpciones.includes(prestacionDraft)) {
+      setPrestacionDraft("");
+    }
+  }, [prestacionDraft, prestacionesOpciones]);
+
+  function aplicarFiltros() {
+    setSearchTermFilter(searchTermDraft.trim());
+    setEstadoFilter(estadoDraft);
+    setProfesionalFilter(profesionalDraft);
+    setPrestacionFilter(prestacionDraft);
+    setFechaDesdeFilter(fechaDesdeDraft);
+    setFechaHastaFilter(fechaHastaDraft);
+  }
+
+  function limpiarFiltros() {
+    setSearchTermDraft("");
+    setSearchTermFilter("");
+    setEstadoDraft("TODOS");
+    setEstadoFilter("TODOS");
+    setFechaDesdeDraft("");
+    setFechaDesdeFilter("");
+    setFechaHastaDraft("");
+    setFechaHastaFilter("");
+    setPrestacionDraft("");
+    setPrestacionFilter("");
+    setProfesionalDraft("");
+    setProfesionalFilter("");
+    setOnlyOverdueReservados(false);
+  }
+
+  async function exportarTurnosPdf(accion: "descargar" | "imprimir") {
+    if (turnosFiltrados.length === 0) {
+      toast.error("No hay turnos filtrados para exportar");
+      return;
+    }
+    const subtitle = [
+      `Estado: ${estadoFilter}`,
+      profesionalFilter ? `Profesional: ${profesionalFilter}` : null,
+      prestacionFilter ? `Prestacion: ${prestacionFilter}` : null,
+      fechaDesdeFilter ? `Desde: ${fechaDesdeFilter}` : null,
+      fechaHastaFilter ? `Hasta: ${fechaHastaFilter}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    try {
+      const pdf = await buildA4TablePdf({
+        title: "Listado de turnos filtrados",
+        subtitle: subtitle || "Sin filtros aplicados",
+        columns: [
+          { header: "Fecha", key: "fecha" },
+          { header: "Hora", key: "hora" },
+          { header: "Paciente", key: "paciente" },
+          { header: "Socio", key: "socio" },
+          { header: "Profesional", key: "profesional" },
+          { header: "Prestacion", key: "prestacion" },
+          { header: "Estado", key: "estado" },
+        ],
+        rows: turnosFiltrados.map((turno) => ({
+          fecha: new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" }),
+          hora: normalizeHora(String(turno.hora)).slice(0, 5) || "-",
+          paciente: turno.nombre || "-",
+          socio: `${turno.cod_soc}/${turno.adherente_codigo}`,
+          profesional: turno.profesional || "-",
+          prestacion: turno.prestacion || "-",
+          estado: String(turno.estado).toUpperCase(),
+        })),
+      });
+
+      if (accion === "descargar") {
+        downloadPdf(pdf, "turnos-filtrados.pdf");
+        toast.success("PDF generado correctamente");
+        return;
+      }
+
+      const success = printPdf(pdf);
+      if (!success) {
+        toast.error("No se pudo abrir la ventana de impresion");
+        return;
+      }
+      toast.success("Abriendo vista de impresion");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo generar el PDF");
+    }
+  }
+
   const turnosFiltrados = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = searchTermFilter.trim().toLowerCase();
     return turnos.filter((turno) => {
       const estado = String(turno.estado).toUpperCase();
       const fecha = String(turno.fecha).slice(0, 10);
@@ -260,14 +362,33 @@ export default function TurnosPage() {
 
       const bySearch = !term || searchable.includes(term);
       const byEstado = estadoFilter === "TODOS" || estado === estadoFilter;
-      const byFecha = !fechaFilter || fecha === fechaFilter;
+      const byFechaDesde = !fechaDesdeFilter || fecha >= fechaDesdeFilter;
+      const byFechaHasta = !fechaHastaFilter || fecha <= fechaHastaFilter;
       const byPrestacion = !prestacionFilter || String(turno.prestacion ?? "").trim() === prestacionFilter;
       const byProfesional = !profesionalFilter || String(turno.profesional ?? "").trim() === profesionalFilter;
       const byVencidos = !onlyOverdueReservados || (estado === "RESERVADO" && canMarkAsAtendido(turno));
 
-      return bySearch && byEstado && byFecha && byPrestacion && byProfesional && byVencidos;
+      return bySearch && byEstado && byFechaDesde && byFechaHasta && byPrestacion && byProfesional && byVencidos;
     });
-  }, [turnos, searchTerm, estadoFilter, fechaFilter, prestacionFilter, profesionalFilter, onlyOverdueReservados]);
+  }, [
+    turnos,
+    searchTermFilter,
+    estadoFilter,
+    fechaDesdeFilter,
+    fechaHastaFilter,
+    prestacionFilter,
+    profesionalFilter,
+    onlyOverdueReservados,
+  ]);
+
+  const hasDraftFilters =
+    searchTermDraft ||
+    estadoDraft !== "TODOS" ||
+    profesionalDraft ||
+    prestacionDraft ||
+    fechaDesdeDraft ||
+    fechaHastaDraft ||
+    onlyOverdueReservados;
 
   if (!canAccessModule(role, "turnos")) {
     return (
@@ -326,14 +447,14 @@ export default function TurnosPage() {
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
             <label className="grid min-w-0 gap-1 lg:col-span-3 2xl:col-span-2">
               <span className="field-label">Buscar</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
+                  value={searchTermDraft}
+                  onChange={(event) => setSearchTermDraft(event.target.value)}
                   placeholder="Paciente, socio, profesional o prestacion"
                   className="h-10 w-full rounded-xl border border-border bg-input px-10 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
@@ -343,8 +464,8 @@ export default function TurnosPage() {
             <label className="grid min-w-0 gap-1">
               <span className="field-label">Estado</span>
               <select
-                value={estadoFilter}
-                onChange={(event) => setEstadoFilter(event.target.value as EstadoFilter)}
+                value={estadoDraft}
+                onChange={(event) => setEstadoDraft(event.target.value as EstadoFilter)}
                 className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="TODOS">Todos</option>
@@ -356,26 +477,10 @@ export default function TurnosPage() {
             </label>
 
             <label className="grid min-w-0 gap-1">
-              <span className="field-label">Prestacion</span>
-              <select
-                value={prestacionFilter}
-                onChange={(event) => setPrestacionFilter(event.target.value)}
-                className="h-10 w-[98%] rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
-              >
-                <option value="">Todas</option>
-                {prestacionesOpciones.map((nombre) => (
-                  <option key={nombre} value={nombre}>
-                    {nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid min-w-0 gap-1">
               <span className="field-label">Profesional</span>
               <select
-                value={profesionalFilter}
-                onChange={(event) => setProfesionalFilter(event.target.value)}
+                value={profesionalDraft}
+                onChange={(event) => setProfesionalDraft(event.target.value)}
                 className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="">Todos</option>
@@ -388,11 +493,38 @@ export default function TurnosPage() {
             </label>
 
             <label className="grid min-w-0 gap-1">
-              <span className="field-label">Fecha</span>
+              <span className="field-label">Prestacion</span>
+              <select
+                value={prestacionDraft}
+                onChange={(event) => setPrestacionDraft(event.target.value)}
+                className="h-10 w-[98%] rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="">Todas</option>
+                {prestacionesOpciones.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Fecha desde</span>
               <input
                 type="date"
-                value={fechaFilter}
-                onChange={(event) => setFechaFilter(event.target.value)}
+                value={fechaDesdeDraft}
+                onChange={(event) => setFechaDesdeDraft(event.target.value)}
+                className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </label>
+
+            <label className="grid min-w-0 gap-1">
+              <span className="field-label">Fecha hasta</span>
+              <input
+                type="date"
+                min={fechaDesdeDraft || undefined}
+                value={fechaHastaDraft}
+                onChange={(event) => setFechaHastaDraft(event.target.value)}
                 className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
               />
             </label>
@@ -402,21 +534,22 @@ export default function TurnosPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Mostrando {turnosFiltrados.length} de {turnos.length} turnos.
             </p>
-            {(searchTerm || estadoFilter !== "TODOS" || fechaFilter || prestacionFilter || profesionalFilter || onlyOverdueReservados) ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchTerm("");
-                  setEstadoFilter("TODOS");
-                  setFechaFilter("");
-                  setPrestacionFilter("");
-                  setProfesionalFilter("");
-                  setOnlyOverdueReservados(false);
-                }}
-              >
-                Limpiar filtros
+            <div className="flex items-center gap-2">
+              <Button onClick={aplicarFiltros}>Aplicar filtros</Button>
+              {hasDraftFilters ? (
+                <Button variant="outline" onClick={limpiarFiltros}>
+                  Quitar filtros
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={() => void exportarTurnosPdf("descargar")}>
+                <FileDown className="mr-2 h-4 w-4" />
+                PDF
               </Button>
-            ) : null}
+              <Button variant="outline" onClick={() => void exportarTurnosPdf("imprimir")}>
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimir
+              </Button>
+            </div>
           </div>
           {onlyOverdueReservados ? (
             <p className="text-sm text-amber-700 dark:text-amber-300">

@@ -87,7 +87,7 @@ export default function LoginPage() {
                   onChange={(event) => setRole(event.target.value as LoginRole)}
                 >
                   <option value={ROLES.ADMIN}>Marianela Farias (Administrador)</option>
-                  <option value={ROLES.DIRECTIVO}>Directivos</option>
+                  <option value={ROLES.ADMIN_VANESA}>Vanesa Caminos (Administradora)</option>
                   <option value={ROLES.ORTOPEDIA_ADMIN}>Guadalupe Saavedra (Ortopedia)</option>
                 </select>
               </div>

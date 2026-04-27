@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Eye, FileDown, Pencil, Plus, Printer, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
 
 type ProfesionalApi = {
   id: number;
@@ -45,6 +46,17 @@ type FormState = {
   pacientes_mensuales: string;
 };
 
+type TurnoMesRow = {
+  id: number;
+  fecha: string;
+  hora: string;
+  estado: string;
+  paciente: string;
+  cod_soc: number | string;
+  adherente_codigo: number | string;
+  prestacion: string;
+};
+
 const emptyForm: FormState = {
   nombre: "",
   especialidad_id: "",
@@ -60,6 +72,11 @@ export default function ProfesionalesPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingProfesional, setEditingProfesional] = useState<ProfesionalApi | null>(null);
+  const [mesTurnosOpen, setMesTurnosOpen] = useState(false);
+  const [selectedProfesional, setSelectedProfesional] = useState<ProfesionalApi | null>(null);
+  const [mesFilter, setMesFilter] = useState(() => new Date().getMonth() + 1);
+  const [turnosDelMes, setTurnosDelMes] = useState<TurnoMesRow[]>([]);
+  const [loadingTurnosMes, setLoadingTurnosMes] = useState(false);
 
   useEffect(() => {
     async function bootstrap() {
@@ -158,6 +175,86 @@ export default function ProfesionalesPage() {
     }
     toast.success("Profesional eliminado");
     await fetchProfesionales();
+  }
+
+  async function openTurnosMesModal(profesional: ProfesionalApi) {
+    setSelectedProfesional(profesional);
+    setMesTurnosOpen(true);
+    await fetchTurnosMes(profesional.id, mesFilter);
+  }
+
+  async function fetchTurnosMes(profesionalId: number, month: number) {
+    setLoadingTurnosMes(true);
+    try {
+      const response = await fetch(`/api/profesionales/${profesionalId}/turnos-mes?mes=${month}`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as { success: boolean; data?: TurnoMesRow[]; error?: string };
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? "No se pudieron cargar los turnos del profesional");
+      }
+      setTurnosDelMes(data.data ?? []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudieron cargar los turnos del profesional");
+      setTurnosDelMes([]);
+    } finally {
+      setLoadingTurnosMes(false);
+    }
+  }
+
+  const monthOptions = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, index) => ({
+        value: index + 1,
+        label: new Date(2026, index, 1).toLocaleDateString("es-AR", { month: "long" }),
+      })),
+    []
+  );
+  const selectedMonthLabel = monthOptions.find((item) => item.value === mesFilter)?.label ?? `Mes ${mesFilter}`;
+
+  async function exportarTurnosMesPdf(accion: "descargar" | "imprimir") {
+    if (!selectedProfesional || turnosDelMes.length === 0) {
+      toast.error("No hay turnos para exportar en este mes");
+      return;
+    }
+    try {
+      const pdf = await buildA4TablePdf({
+        title: `Turnos mensuales - ${selectedProfesional.nombre}`,
+        subtitle: `Mes: ${selectedMonthLabel} | Especialidad: ${selectedProfesional.especialidad}`,
+        columns: [
+          { header: "Fecha", key: "fecha" },
+          { header: "Hora", key: "hora" },
+          { header: "Paciente", key: "paciente" },
+          { header: "Socio", key: "socio" },
+          { header: "Prestacion", key: "prestacion" },
+          { header: "Estado", key: "estado" },
+        ],
+        rows: turnosDelMes.map((turno) => ({
+          fecha: new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" }),
+          hora: String(turno.hora).slice(0, 5),
+          paciente: turno.paciente || "-",
+          socio: `${turno.cod_soc}/${turno.adherente_codigo}`,
+          prestacion: turno.prestacion || "-",
+          estado: String(turno.estado).toUpperCase(),
+        })),
+      });
+
+      const baseName = `turnos-${selectedProfesional.nombre.toLowerCase().replace(/\s+/g, "-")}-${mesFilter}.pdf`;
+      if (accion === "descargar") {
+        downloadPdf(pdf, baseName);
+        toast.success("PDF del profesional generado");
+        return;
+      }
+
+      const success = printPdf(pdf);
+      if (!success) {
+        toast.error("No se pudo abrir la vista de impresion");
+        return;
+      }
+      toast.success("Abriendo vista de impresion");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo generar el PDF");
+    }
   }
 
   if (!canAccessModule(role, "profesionales")) {
@@ -286,6 +383,10 @@ export default function ProfesionalesPage() {
                         <TableCell>{profesional.duracion_turno ? `${profesional.duracion_turno} min` : "-"}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => void openTurnosMesModal(profesional)}>
+                              <Eye className="mr-1 h-4 w-4" />
+                              Turnos del mes
+                            </Button>
                             <Button size="sm" variant="outline" onClick={() => openEditModal(profesional)}>
                               <Pencil className="mr-1 h-4 w-4" />
                               Editar
@@ -326,6 +427,10 @@ export default function ProfesionalesPage() {
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" className="sm:flex-1" onClick={() => void openTurnosMesModal(profesional)}>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Turnos del mes
+                      </Button>
                       <Button variant="outline" className="sm:flex-1" onClick={() => openEditModal(profesional)}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Editar
@@ -342,6 +447,86 @@ export default function ProfesionalesPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={mesTurnosOpen} onOpenChange={setMesTurnosOpen}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              Turnos de {selectedProfesional?.nombre ?? "profesional"} del mes
+            </DialogTitle>
+            <DialogDescription>
+              Vista mensual de turnos reservados y atendidos para controlar cupo del profesional.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <label className="grid gap-1">
+              <span className="field-label">Mes</span>
+              <select
+                className="h-10 rounded-xl border border-border bg-input px-3 text-sm text-foreground outline-none focus:border-primary"
+                value={mesFilter}
+                onChange={(event) => {
+                  const nextMonth = Number(event.target.value);
+                  setMesFilter(nextMonth);
+                  if (selectedProfesional) {
+                    void fetchTurnosMes(selectedProfesional.id, nextMonth);
+                  }
+                }}
+              >
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {turnosDelMes.length} turnos registrados.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => void exportarTurnosMesPdf("descargar")} disabled={turnosDelMes.length === 0}>
+              <FileDown className="mr-2 h-4 w-4" />
+              Exportar PDF
+            </Button>
+            <Button variant="outline" onClick={() => void exportarTurnosMesPdf("imprimir")} disabled={turnosDelMes.length === 0}>
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimir A4
+            </Button>
+          </div>
+
+          {loadingTurnosMes ? (
+            <Loading label="Cargando turnos del mes..." />
+          ) : turnosDelMes.length === 0 ? (
+            <EmptyState message="No hay turnos para ese mes." />
+          ) : (
+            <div className="max-h-[55vh] overflow-auto rounded-xl border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Hora</TableHead>
+                    <TableHead>Paciente</TableHead>
+                    <TableHead>Prestacion</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {turnosDelMes.map((turno) => (
+                    <TableRow key={turno.id}>
+                      <TableCell>{new Date(turno.fecha).toLocaleDateString("es-AR", { timeZone: "UTC" })}</TableCell>
+                      <TableCell>{String(turno.hora).slice(0, 5)}</TableCell>
+                      <TableCell>{turno.paciente || `Socio ${turno.cod_soc}`}</TableCell>
+                      <TableCell>{turno.prestacion}</TableCell>
+                      <TableCell>{turno.estado}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

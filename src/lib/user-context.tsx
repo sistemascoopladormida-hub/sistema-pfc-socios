@@ -55,8 +55,26 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "profesionales",
     "especialidades",
     "prestaciones",
+    "reportes",
+    "ortopedia-gestion",
+    "ortopedia-asignacion",
+    "ortopedia-stock",
+    "ortopedia-prestamos",
   ],
-  directivo: ["dashboard", "reportes"],
+  admin_vanesa: [
+    "dashboard",
+    "socios",
+    "turnos",
+    "agenda-profesional",
+    "profesionales",
+    "especialidades",
+    "prestaciones",
+    "reportes",
+    "ortopedia-gestion",
+    "ortopedia-asignacion",
+    "ortopedia-stock",
+    "ortopedia-prestamos",
+  ],
   ortopedia_admin: [
     "ortopedia-gestion",
     "ortopedia-asignacion",
@@ -67,13 +85,13 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
 
 export const roleLabel: Record<UserRole, string> = {
   admin: "Administrador",
-  directivo: "Directivo",
+  admin_vanesa: "Administradora",
   ortopedia_admin: "Admin Ortopedia",
 };
 
 export const simulatedUserByRole: Record<UserRole, string> = {
   admin: ROLE_USERS.admin,
-  directivo: ROLE_USERS.directivo,
+  admin_vanesa: ROLE_USERS.admin_vanesa,
   ortopedia_admin: ROLE_USERS.ortopedia_admin,
 };
 
@@ -85,13 +103,13 @@ type UserProviderProps = {
 };
 
 export function UserProvider({ children, initialRole }: UserProviderProps) {
-  const [role, setRole] = useState<UserRole>(initialRole ?? ROLES.DIRECTIVO);
+  const [role, setRole] = useState<UserRole>(initialRole ?? ROLES.ADMIN_VANESA);
   const [specialistUsuario, setSpecialistUsuario] = useState<string>(specialistAccounts[0].usuario);
   useEffect(() => {
     const storedRole = localStorage.getItem("rol");
     if (
       storedRole === ROLES.ADMIN ||
-      storedRole === ROLES.DIRECTIVO ||
+      storedRole === ROLES.ADMIN_VANESA ||
       storedRole === ROLES.ORTOPEDIA_ADMIN
     ) {
       setRole(storedRole);
@@ -101,6 +119,12 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
       setRole(ROLES.ADMIN);
       localStorage.setItem("rol", ROLES.ADMIN);
       localStorage.setItem("usuario", ROLE_USERS.admin);
+      return;
+    }
+    if (storedRole === "directivo") {
+      setRole(ROLES.ADMIN_VANESA);
+      localStorage.setItem("rol", ROLES.ADMIN_VANESA);
+      localStorage.setItem("usuario", ROLE_USERS.admin_vanesa);
       return;
     }
     if (initialRole) {
@@ -114,10 +138,14 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
       const storedRole = localStorage.getItem("rol");
       if (
         storedRole === ROLES.ADMIN ||
-        storedRole === ROLES.DIRECTIVO ||
+        storedRole === ROLES.ADMIN_VANESA ||
         storedRole === ROLES.ORTOPEDIA_ADMIN
       ) {
         setRole(storedRole);
+      } else if (storedRole === "directivo") {
+        setRole(ROLES.ADMIN_VANESA);
+        localStorage.setItem("rol", ROLES.ADMIN_VANESA);
+        localStorage.setItem("usuario", ROLE_USERS.admin_vanesa);
       }
     };
     window.addEventListener("storage", syncRole);
@@ -154,5 +182,5 @@ export function useUser() {
 }
 
 export function canAccessModule(role: UserRole, module: AppModule) {
-  return roleModuleAccess[role].includes(module);
+  return roleModuleAccess[role]?.includes(module) ?? false;
 }

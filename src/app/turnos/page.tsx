@@ -541,14 +541,14 @@ export default function TurnosPage() {
                   Quitar filtros
                 </Button>
               ) : null}
-              <Button variant="outline" onClick={() => void exportarTurnosPdf("descargar")}>
+              {/* <Button variant="outline" onClick={() => void exportarTurnosPdf("descargar")}>
                 <FileDown className="mr-2 h-4 w-4" />
                 PDF
               </Button>
               <Button variant="outline" onClick={() => void exportarTurnosPdf("imprimir")}>
                 <Printer className="mr-2 h-4 w-4" />
                 Imprimir
-              </Button>
+              </Button> */}
             </div>
           </div>
           {onlyOverdueReservados ? (

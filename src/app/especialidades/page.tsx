@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { ROLES } from "@/lib/roles";
 
 type EspecialidadApi = {
   id: number;
@@ -51,6 +52,7 @@ const emptyEspecialidadForm: EspecialidadForm = {
 
 export default function EspecialidadesPage() {
   const { role } = useUser();
+  const canManageCrud = role === ROLES.DEVELOPER;
   const [especialidades, setEspecialidades] = useState<EspecialidadApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -118,6 +120,10 @@ export default function EspecialidadesPage() {
   }
 
   async function handleSave() {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar especialidades");
+      return;
+    }
     const nombre = form.nombre.trim();
     if (!nombre) {
       toast.error("Completa el nombre de la especialidad");
@@ -148,6 +154,10 @@ export default function EspecialidadesPage() {
   }
 
   async function handleDelete(item: EspecialidadApi) {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar especialidades");
+      return;
+    }
     const confirmed = window.confirm("¿Desea eliminar esta especialidad?");
     if (!confirmed) return;
 
@@ -186,34 +196,36 @@ export default function EspecialidadesPage() {
       <Card className="bg-white shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle>Gestion de Especialidades</CardTitle>
-          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-            <DialogTrigger
-              render={
-                <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
-                  Nueva especialidad
-                </Button>
-              }
-            />
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{editingEspecialidad ? "Editar especialidad" : "Nueva especialidad"}</DialogTitle>
-                <DialogDescription>Ingresa el nombre de la especialidad.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3">
-                <label className="grid gap-1 text-sm">
-                  <span>Nombre</span>
-                  <Input
-                    value={form.nombre}
-                    onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))}
-                    placeholder="Ej: Psicologia"
-                  />
-                </label>
-                <Button className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
-                  {editingEspecialidad ? "Actualizar especialidad" : "Guardar especialidad"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {canManageCrud ? (
+            <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+              <DialogTrigger
+                render={
+                  <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
+                    Nueva especialidad
+                  </Button>
+                }
+              />
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{editingEspecialidad ? "Editar especialidad" : "Nueva especialidad"}</DialogTitle>
+                  <DialogDescription>Ingresa el nombre de la especialidad.</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3">
+                  <label className="grid gap-1 text-sm">
+                    <span>Nombre</span>
+                    <Input
+                      value={form.nombre}
+                      onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))}
+                      placeholder="Ej: Psicologia"
+                    />
+                  </label>
+                  <Button className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
+                    {editingEspecialidad ? "Actualizar especialidad" : "Guardar especialidad"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          ) : null}
         </CardHeader>
 
         <CardContent>
@@ -225,7 +237,7 @@ export default function EspecialidadesPage() {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="text-right">{canManageCrud ? "Acciones" : "Consulta"}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -235,24 +247,30 @@ export default function EspecialidadesPage() {
                     <TableCell>{item.nombre}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1"
-                          onClick={() => openEditModal(item)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="gap-1"
-                          onClick={() => handleDelete(item)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Eliminar
-                        </Button>
+                        {canManageCrud ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1"
+                              onClick={() => openEditModal(item)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="gap-1"
+                              onClick={() => handleDelete(item)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Eliminar
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-500">Solo lectura</span>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

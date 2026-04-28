@@ -56,12 +56,22 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "especialidades",
     "prestaciones",
     "reportes",
+  ],
+  admin_vanesa: [
+    "dashboard",
+    "socios",
+    "turnos",
+    "agenda-profesional",
+    "profesionales",
+    "especialidades",
+    "prestaciones",
+    "reportes",
     "ortopedia-gestion",
     "ortopedia-asignacion",
     "ortopedia-stock",
     "ortopedia-prestamos",
   ],
-  admin_vanesa: [
+  developer: [
     "dashboard",
     "socios",
     "turnos",
@@ -86,12 +96,14 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
 export const roleLabel: Record<UserRole, string> = {
   admin: "Administrador",
   admin_vanesa: "Administradora",
+  developer: "Desarrollador",
   ortopedia_admin: "Admin Ortopedia",
 };
 
 export const simulatedUserByRole: Record<UserRole, string> = {
   admin: ROLE_USERS.admin,
   admin_vanesa: ROLE_USERS.admin_vanesa,
+  developer: ROLE_USERS.developer,
   ortopedia_admin: ROLE_USERS.ortopedia_admin,
 };
 
@@ -110,6 +122,7 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
     if (
       storedRole === ROLES.ADMIN ||
       storedRole === ROLES.ADMIN_VANESA ||
+      storedRole === ROLES.DEVELOPER ||
       storedRole === ROLES.ORTOPEDIA_ADMIN
     ) {
       setRole(storedRole);
@@ -139,6 +152,7 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
       if (
         storedRole === ROLES.ADMIN ||
         storedRole === ROLES.ADMIN_VANESA ||
+        storedRole === ROLES.DEVELOPER ||
         storedRole === ROLES.ORTOPEDIA_ADMIN
       ) {
         setRole(storedRole);

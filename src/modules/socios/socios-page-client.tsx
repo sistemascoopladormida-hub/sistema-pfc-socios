@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarPlus2, ClipboardList, Loader2, Search, Users } from "lucide-react";
+import { CalendarPlus2, ClipboardList, FileDown, Loader2, Printer, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { DataBadge } from "@/components/ui/data-badge";
@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type SocioListadoRow = {
@@ -108,6 +109,7 @@ export function SociosPageClient() {
   const [grupoRows, setGrupoRows] = useState<SocioListadoRow[]>([]);
   const [grupoCodSoc, setGrupoCodSoc] = useState<string>("");
   const [cardFilter, setCardFilter] = useState<SocioCardFilter>("TODOS");
+  const [edadCeroOnly, setEdadCeroOnly] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 450);
@@ -176,8 +178,7 @@ export function SociosPageClient() {
   );
 
   const sociosFiltrados = useMemo(() => {
-    if (cardFilter === "TODOS") return socios;
-    return socios.filter((row) => {
+    const segmentados = cardFilter === "TODOS" ? socios : socios.filter((row) => {
       const vinculoNormalizado = normalizeVinculo(row.VINCULO);
       const esHijoMayor18 = Boolean(row.ES_HIJO_MAYOR_18);
       const esHijo = Boolean(row.ES_HIJO);
@@ -190,7 +191,9 @@ export function SociosPageClient() {
       if (cardFilter === "TITULARES") return vinculoNormalizado === "TITULAR";
       return true;
     });
-  }, [socios, cardFilter]);
+    if (!edadCeroOnly) return segmentados;
+    return segmentados.filter((row) => Number(row.EDAD) === 0);
+  }, [socios, cardFilter, edadCeroOnly]);
 
   const summaryCards = [
     {
@@ -224,6 +227,60 @@ export function SociosPageClient() {
     setCardFilter((prev) => (prev === nextFilter ? "TODOS" : nextFilter));
     setQuery("");
     setDebouncedQuery("");
+  }
+
+  async function exportarSociosPdf(accion: "descargar" | "imprimir") {
+    if (sociosFiltrados.length === 0) {
+      toast.error("No hay adherentes para exportar");
+      return;
+    }
+    const segmentoActivo = summaryCards.find((item) => item.key === cardFilter)?.label ?? "Todos";
+    const subtitulo = [
+      `Busqueda: ${debouncedQuery || "sin texto"}`,
+      `Segmento: ${cardFilter === "TODOS" ? "todos" : segmentoActivo.toLowerCase()}`,
+      `Edad 0: ${edadCeroOnly ? "si" : "no"}`,
+      `Resultados: ${sociosFiltrados.length}`,
+    ].join(" | ");
+
+    try {
+      const pdf = await buildA4TablePdf({
+        title: "Listado de socios y adherentes",
+        subtitle: subtitulo,
+        columns: [
+          { header: "Socio", key: "socio" },
+          { header: "Adherente", key: "adherente" },
+          { header: "Vinculo", key: "vinculo" },
+          { header: "Edad", key: "edad" },
+          { header: "DNI", key: "dni" },
+          { header: "Categoria", key: "categoria" },
+          { header: "Beneficio", key: "beneficio" },
+        ],
+        rows: sociosFiltrados.map((row) => ({
+          socio: String(row.COD_SOC ?? ""),
+          adherente: row.ADHERENTE_NOMBRE || row.APELLIDOS || "No registrado",
+          vinculo: row.VINCULO || "No registrado",
+          edad: Number.isFinite(Number(row.EDAD)) ? `${Number(row.EDAD)}` : "Sin dato",
+          dni: row.DNI_ADHERENTE || "No registrado",
+          categoria: row.DES_CAT || "No registrado",
+          beneficio: getBeneficioLabel(row),
+        })),
+      });
+
+      if (accion === "descargar") {
+        downloadPdf(pdf, "socios-filtrados.pdf");
+        toast.success("PDF generado correctamente");
+        return;
+      }
+
+      const ok = printPdf(pdf);
+      if (!ok) {
+        toast.error("No se pudo abrir la vista de impresion");
+        return;
+      }
+      toast.success("Abriendo vista de impresion");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo generar el PDF");
+    }
   }
 
   async function handleVerGrupo(codSocRaw: number | string) {
@@ -358,6 +415,23 @@ export function SociosPageClient() {
               </Button>
             </div>
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={edadCeroOnly ? "default" : "outline"}
+              onClick={() => setEdadCeroOnly((prev) => !prev)}
+            >
+              {edadCeroOnly ? "Quitar filtro edad 0" : "Filtrar edad 0"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void exportarSociosPdf("descargar")}>
+              <FileDown className="mr-2 h-4 w-4" />
+              PDF
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void exportarSociosPdf("imprimir")}>
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimir
+            </Button>
+          </div>
 
           {sociosFiltrados.length === 0 ? (
             <EmptyState message="No hay datos disponibles" />

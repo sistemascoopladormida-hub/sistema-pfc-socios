@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
 import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
+import { ROLES } from "@/lib/roles";
 
 type TurnoEstado = "RESERVADO" | "ATENDIDO" | "CANCELADO" | "AUSENTE";
 type EstadoFilter = "TODOS" | TurnoEstado;
@@ -541,14 +542,14 @@ export default function TurnosPage() {
                   Quitar filtros
                 </Button>
               ) : null}
-              {/* <Button variant="outline" onClick={() => void exportarTurnosPdf("descargar")}>
+              <Button variant="outline" onClick={() => void exportarTurnosPdf("descargar")}>
                 <FileDown className="mr-2 h-4 w-4" />
                 PDF
               </Button>
               <Button variant="outline" onClick={() => void exportarTurnosPdf("imprimir")}>
                 <Printer className="mr-2 h-4 w-4" />
                 Imprimir
-              </Button> */}
+              </Button>
             </div>
           </div>
           {onlyOverdueReservados ? (
@@ -625,7 +626,7 @@ export default function TurnosPage() {
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
-                            {role === "admin" ? (
+                            {role === ROLES.ADMIN || role === ROLES.DEVELOPER ? (
                               <Button
                                 size="icon-sm"
                                 variant="destructive"
@@ -691,7 +692,7 @@ export default function TurnosPage() {
                             <Eye className="h-4 w-4" />
                             <span className="text-xs font-medium">Ver detalle</span>
                           </Button>
-                          {role === "admin" ? (
+                          {role === ROLES.ADMIN || role === ROLES.DEVELOPER ? (
                             <Button
                               variant="destructive"
                               size="sm"

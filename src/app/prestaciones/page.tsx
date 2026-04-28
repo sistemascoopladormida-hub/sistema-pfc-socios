@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { ROLES } from "@/lib/roles";
 
 type PrestacionApi = {
   id: number;
@@ -51,6 +52,7 @@ const emptyPrestacionForm: PrestacionForm = {
 
 export default function PrestacionesPage() {
   const { role } = useUser();
+  const canManageCrud = role === ROLES.DEVELOPER;
   const [prestaciones, setPrestaciones] = useState<PrestacionApi[]>([]);
   const [especialidades, setEspecialidades] = useState<EspecialidadApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,6 +117,10 @@ export default function PrestacionesPage() {
   }
 
   async function handleSavePrestacion() {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar prestaciones");
+      return;
+    }
     const nombre = prestacionForm.nombre.trim();
     const especialidadId = Number(prestacionForm.especialidad_id);
 
@@ -149,6 +155,10 @@ export default function PrestacionesPage() {
   }
 
   async function handleDeletePrestacion(prestacion: PrestacionApi) {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar prestaciones");
+      return;
+    }
     const confirmed = window.confirm("¿Desea eliminar esta prestación?");
     if (!confirmed) return;
 
@@ -186,67 +196,69 @@ export default function PrestacionesPage() {
     <Card className="bg-white shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between gap-4">
         <CardTitle>Gestion de Prestaciones PFC</CardTitle>
-        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-          <DialogTrigger
-            render={
-              <Button
-                className="bg-coopBlue text-white hover:bg-coopSecondary"
-                onClick={openNewPrestacionModal}
-              >
-                Nueva prestacion
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editingPrestacion ? "Editar prestacion" : "Nueva prestacion"}</DialogTitle>
-              <DialogDescription>
-                Completa el nombre y selecciona la especialidad asociada.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-3">
-              <label className="grid gap-1 text-sm">
-                <span>Nombre de prestacion</span>
-                <Input
-                  value={prestacionForm.nombre}
-                  onChange={(event) =>
-                    setPrestacionForm((prev) => ({ ...prev, nombre: event.target.value }))
-                  }
-                  placeholder="Ej: Sesion Psicologia Infantil"
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm">
-                <span>Especialidad</span>
-                <select
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={prestacionForm.especialidad_id}
-                  onChange={(event) =>
-                    setPrestacionForm((prev) => ({
-                      ...prev,
-                      especialidad_id: event.target.value,
-                    }))
-                  }
+        {canManageCrud ? (
+          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+            <DialogTrigger
+              render={
+                <Button
+                  className="bg-coopBlue text-white hover:bg-coopSecondary"
+                  onClick={openNewPrestacionModal}
                 >
-                  <option value="">Seleccionar especialidad</option>
-                  {especialidades.map((item) => (
-                    <option key={item.id} value={String(item.id)}>
-                      {item.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  Nueva prestacion
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{editingPrestacion ? "Editar prestacion" : "Nueva prestacion"}</DialogTitle>
+                <DialogDescription>
+                  Completa el nombre y selecciona la especialidad asociada.
+                </DialogDescription>
+              </DialogHeader>
 
-              <Button
-                className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary"
-                onClick={handleSavePrestacion}
-              >
-                {editingPrestacion ? "Actualizar prestacion" : "Guardar prestacion"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+              <div className="grid gap-3">
+                <label className="grid gap-1 text-sm">
+                  <span>Nombre de prestacion</span>
+                  <Input
+                    value={prestacionForm.nombre}
+                    onChange={(event) =>
+                      setPrestacionForm((prev) => ({ ...prev, nombre: event.target.value }))
+                    }
+                    placeholder="Ej: Sesion Psicologia Infantil"
+                  />
+                </label>
+
+                <label className="grid gap-1 text-sm">
+                  <span>Especialidad</span>
+                  <select
+                    className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+                    value={prestacionForm.especialidad_id}
+                    onChange={(event) =>
+                      setPrestacionForm((prev) => ({
+                        ...prev,
+                        especialidad_id: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Seleccionar especialidad</option>
+                    {especialidades.map((item) => (
+                      <option key={item.id} value={String(item.id)}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <Button
+                  className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary"
+                  onClick={handleSavePrestacion}
+                >
+                  {editingPrestacion ? "Actualizar prestacion" : "Guardar prestacion"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </CardHeader>
 
       <CardContent>
@@ -258,7 +270,7 @@ export default function PrestacionesPage() {
               <TableRow>
                 <TableHead>Prestacion</TableHead>
                 <TableHead>Especialidad</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                <TableHead className="text-right">{canManageCrud ? "Acciones" : "Consulta"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -268,24 +280,30 @@ export default function PrestacionesPage() {
                   <TableCell>{prestacion.especialidad}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => openEditPrestacionModal(prestacion)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Editar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="gap-1"
-                        onClick={() => handleDeletePrestacion(prestacion)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </Button>
+                      {canManageCrud ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => openEditPrestacionModal(prestacion)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="gap-1"
+                            onClick={() => handleDeletePrestacion(prestacion)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-500">Solo lectura</span>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

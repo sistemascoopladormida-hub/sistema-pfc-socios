@@ -88,6 +88,7 @@ export default function LoginPage() {
                 >
                   <option value={ROLES.ADMIN}>Marianela Farias (Administrador)</option>
                   <option value={ROLES.ADMIN_VANESA}>Vanesa Caminos (Administradora)</option>
+                  <option value={ROLES.DEVELOPER}>Brian Gelvez (Desarrollador)</option>
                   <option value={ROLES.ORTOPEDIA_ADMIN}>Guadalupe Saavedra (Ortopedia)</option>
                 </select>
               </div>

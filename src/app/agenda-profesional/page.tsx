@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { ROLES } from "@/lib/roles";
 
 type AgendaRow = {
   id: number;
@@ -69,6 +70,7 @@ const emptyForm: FormState = {
 
 export default function AgendaProfesionalPage() {
   const { role } = useUser();
+  const canManageCrud = role === ROLES.DEVELOPER;
   const [agenda, setAgenda] = useState<AgendaRow[]>([]);
   const [profesionales, setProfesionales] = useState<ProfesionalOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +133,10 @@ export default function AgendaProfesionalPage() {
   }
 
   async function handleSave() {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar agenda profesional");
+      return;
+    }
     const profesionalId = Number(form.profesional_id);
     const diaSemana = Number(form.dia_semana);
     const horaInicio = form.hora_inicio.trim();
@@ -191,6 +197,10 @@ export default function AgendaProfesionalPage() {
   }
 
   async function handleDelete(item: AgendaRow) {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar agenda profesional");
+      return;
+    }
     const confirmed = window.confirm("¿Desea eliminar este horario?");
     if (!confirmed) return;
 
@@ -232,78 +242,80 @@ export default function AgendaProfesionalPage() {
           Agenda Profesional
         </CardTitle>
 
-        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-          <DialogTrigger
-            render={
-              <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
-                Nuevo horario
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editingHorario ? "Editar horario" : "Nuevo horario"}</DialogTitle>
-              <DialogDescription>Configura el dia y franja de atencion del profesional.</DialogDescription>
-            </DialogHeader>
+        {canManageCrud ? (
+          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+            <DialogTrigger
+              render={
+                <Button className="bg-coopBlue text-white hover:bg-coopSecondary" onClick={openCreateModal}>
+                  Nuevo horario
+                </Button>
+              }
+            />
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{editingHorario ? "Editar horario" : "Nuevo horario"}</DialogTitle>
+                <DialogDescription>Configura el dia y franja de atencion del profesional.</DialogDescription>
+              </DialogHeader>
 
-            <div className="grid gap-3">
-              <label className="grid gap-1 text-sm">
-                <span>Profesional</span>
-                <select
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.profesional_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, profesional_id: event.target.value }))}
-                  disabled={Boolean(editingHorario)}
-                >
-                  <option value="">Seleccionar</option>
-                  {profesionales.map((item) => (
-                    <option key={item.id} value={String(item.id)}>
-                      {item.nombre} - {item.especialidad}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="grid gap-3">
+                <label className="grid gap-1 text-sm">
+                  <span>Profesional</span>
+                  <select
+                    className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+                    value={form.profesional_id}
+                    onChange={(event) => setForm((prev) => ({ ...prev, profesional_id: event.target.value }))}
+                    disabled={Boolean(editingHorario)}
+                  >
+                    <option value="">Seleccionar</option>
+                    {profesionales.map((item) => (
+                      <option key={item.id} value={String(item.id)}>
+                        {item.nombre} - {item.especialidad}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="grid gap-1 text-sm">
-                <span>Dia de la semana</span>
-                <select
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
-                  value={form.dia_semana}
-                  onChange={(event) => setForm((prev) => ({ ...prev, dia_semana: event.target.value }))}
-                >
-                  <option value="">Seleccionar</option>
-                  {Object.entries(diaSemanaLabel).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label className="grid gap-1 text-sm">
+                  <span>Dia de la semana</span>
+                  <select
+                    className="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm"
+                    value={form.dia_semana}
+                    onChange={(event) => setForm((prev) => ({ ...prev, dia_semana: event.target.value }))}
+                  >
+                    <option value="">Seleccionar</option>
+                    {Object.entries(diaSemanaLabel).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="grid gap-1 text-sm">
-                <span>Hora inicio</span>
-                <Input
-                  type="time"
-                  value={form.hora_inicio}
-                  onChange={(event) => setForm((prev) => ({ ...prev, hora_inicio: event.target.value }))}
-                />
-              </label>
+                <label className="grid gap-1 text-sm">
+                  <span>Hora inicio</span>
+                  <Input
+                    type="time"
+                    value={form.hora_inicio}
+                    onChange={(event) => setForm((prev) => ({ ...prev, hora_inicio: event.target.value }))}
+                  />
+                </label>
 
-              <label className="grid gap-1 text-sm">
-                <span>Hora fin</span>
-                <Input
-                  type="time"
-                  value={form.hora_fin}
-                  onChange={(event) => setForm((prev) => ({ ...prev, hora_fin: event.target.value }))}
-                />
-              </label>
+                <label className="grid gap-1 text-sm">
+                  <span>Hora fin</span>
+                  <Input
+                    type="time"
+                    value={form.hora_fin}
+                    onChange={(event) => setForm((prev) => ({ ...prev, hora_fin: event.target.value }))}
+                  />
+                </label>
 
-              <Button className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
-                {editingHorario ? "Actualizar horario" : "Guardar horario"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+                <Button className="mt-2 bg-coopBlue text-white hover:bg-coopSecondary" onClick={handleSave}>
+                  {editingHorario ? "Actualizar horario" : "Guardar horario"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </CardHeader>
 
       <CardContent>
@@ -319,7 +331,7 @@ export default function AgendaProfesionalPage() {
                 <TableHead>Hora inicio</TableHead>
                 <TableHead>Hora fin</TableHead>
                 <TableHead>Pacientes mensuales</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                <TableHead className="text-right">{canManageCrud ? "Acciones" : "Consulta"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -337,24 +349,30 @@ export default function AgendaProfesionalPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => openEditModal(item)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Editar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="gap-1"
-                        onClick={() => handleDelete(item)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </Button>
+                      {canManageCrud ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => openEditModal(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="gap-1"
+                            onClick={() => handleDelete(item)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-500">Solo lectura</span>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

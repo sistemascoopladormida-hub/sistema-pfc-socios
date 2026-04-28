@@ -21,6 +21,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
 import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
+import { ROLES } from "@/lib/roles";
 
 type ProfesionalApi = {
   id: number;
@@ -66,6 +67,7 @@ const emptyForm: FormState = {
 
 export default function ProfesionalesPage() {
   const { role } = useUser();
+  const canManageCrud = role === ROLES.DEVELOPER;
   const [profesionales, setProfesionales] = useState<ProfesionalApi[]>([]);
   const [especialidades, setEspecialidades] = useState<EspecialidadApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,6 +127,10 @@ export default function ProfesionalesPage() {
   }
 
   async function handleSave() {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar profesionales");
+      return;
+    }
     const nombre = form.nombre.trim();
     const especialidadId = Number(form.especialidad_id);
     const duracionTurno = Number(form.duracion_turno);
@@ -166,6 +172,10 @@ export default function ProfesionalesPage() {
   }
 
   async function handleDelete(item: ProfesionalApi) {
+    if (!canManageCrud) {
+      toast.error("Solo el rol Desarrollador puede gestionar profesionales");
+      return;
+    }
     if (!window.confirm("Desea eliminar este profesional?")) return;
     const response = await fetch(`/api/profesionales/${item.id}`, { method: "DELETE" });
     const data = (await response.json()) as { success: boolean; error?: string };
@@ -280,70 +290,72 @@ export default function ProfesionalesPage() {
         title="Profesionales"
         breadcrumbs={["Configuracion medica"]}
         rightSlot={
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger
-              render={
-                <Button onClick={openCreateModal}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo profesional
-                </Button>
-              }
-            />
-            <DialogContent className="sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>{editingProfesional ? "Editar profesional" : "Nuevo profesional"}</DialogTitle>
-                <DialogDescription>Completa los datos principales del profesional.</DialogDescription>
-              </DialogHeader>
+          canManageCrud ? (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger
+                render={
+                  <Button onClick={openCreateModal}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nuevo profesional
+                  </Button>
+                }
+              />
+              <DialogContent className="sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>{editingProfesional ? "Editar profesional" : "Nuevo profesional"}</DialogTitle>
+                  <DialogDescription>Completa los datos principales del profesional.</DialogDescription>
+                </DialogHeader>
 
-              <div className="field-grid field-grid-2">
-                <label className="grid gap-2">
-                  <span className="field-label">Nombre completo</span>
-                  <Input value={form.nombre} onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))} />
-                </label>
+                <div className="field-grid field-grid-2">
+                  <label className="grid gap-2">
+                    <span className="field-label">Nombre completo</span>
+                    <Input value={form.nombre} onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))} />
+                  </label>
 
-                <label className="grid gap-2">
-                  <span className="field-label">Especialidad</span>
-                  <select
-                    className="h-11 rounded-2xl border border-border bg-input px-3 text-sm text-foreground outline-none"
-                    value={form.especialidad_id}
-                    onChange={(event) => setForm((prev) => ({ ...prev, especialidad_id: event.target.value }))}
-                  >
-                    <option value="">Seleccionar</option>
-                    {especialidades.map((item) => (
-                      <option key={item.id} value={String(item.id)}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <label className="grid gap-2">
+                    <span className="field-label">Especialidad</span>
+                    <select
+                      className="h-11 rounded-2xl border border-border bg-input px-3 text-sm text-foreground outline-none"
+                      value={form.especialidad_id}
+                      onChange={(event) => setForm((prev) => ({ ...prev, especialidad_id: event.target.value }))}
+                    >
+                      <option value="">Seleccionar</option>
+                      {especialidades.map((item) => (
+                        <option key={item.id} value={String(item.id)}>
+                          {item.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label className="grid gap-2">
-                  <span className="field-label">Pacientes mensuales</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={form.pacientes_mensuales}
-                    onChange={(event) => setForm((prev) => ({ ...prev, pacientes_mensuales: event.target.value }))}
-                  />
-                </label>
+                  <label className="grid gap-2">
+                    <span className="field-label">Pacientes mensuales</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.pacientes_mensuales}
+                      onChange={(event) => setForm((prev) => ({ ...prev, pacientes_mensuales: event.target.value }))}
+                    />
+                  </label>
 
-                <label className="grid gap-2">
-                  <span className="field-label">Duracion del turno</span>
-                  <Input
-                    type="number"
-                    min={5}
-                    step={5}
-                    value={form.duracion_turno}
-                    onChange={(event) => setForm((prev) => ({ ...prev, duracion_turno: event.target.value }))}
-                  />
-                </label>
-              </div>
+                  <label className="grid gap-2">
+                    <span className="field-label">Duracion del turno</span>
+                    <Input
+                      type="number"
+                      min={5}
+                      step={5}
+                      value={form.duracion_turno}
+                      onChange={(event) => setForm((prev) => ({ ...prev, duracion_turno: event.target.value }))}
+                    />
+                  </label>
+                </div>
 
-              <div className="flex justify-end">
-                <Button onClick={handleSave}>{editingProfesional ? "Actualizar" : "Guardar"}</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+                <div className="flex justify-end">
+                  <Button onClick={handleSave}>{editingProfesional ? "Actualizar" : "Guardar"}</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          ) : null
         }
       />
 
@@ -367,7 +379,7 @@ export default function ProfesionalesPage() {
                       <TableHead>Especialidad</TableHead>
                       <TableHead>Cupo mensual</TableHead>
                       <TableHead>Duracion</TableHead>
-                      <TableHead>Acciones</TableHead>
+                      <TableHead>{canManageCrud ? "Acciones" : "Consulta"}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -387,14 +399,18 @@ export default function ProfesionalesPage() {
                               <Eye className="mr-1 h-4 w-4" />
                               Turnos del mes
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => openEditModal(profesional)}>
-                              <Pencil className="mr-1 h-4 w-4" />
-                              Editar
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleDelete(profesional)}>
-                              <Trash2 className="mr-1 h-4 w-4" />
-                              Eliminar
-                            </Button>
+                            {canManageCrud ? (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => openEditModal(profesional)}>
+                                  <Pencil className="mr-1 h-4 w-4" />
+                                  Editar
+                                </Button>
+                                <Button size="sm" variant="destructive" onClick={() => handleDelete(profesional)}>
+                                  <Trash2 className="mr-1 h-4 w-4" />
+                                  Eliminar
+                                </Button>
+                              </>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -431,14 +447,18 @@ export default function ProfesionalesPage() {
                         <Eye className="mr-2 h-4 w-4" />
                         Turnos del mes
                       </Button>
-                      <Button variant="outline" className="sm:flex-1" onClick={() => openEditModal(profesional)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Editar
-                      </Button>
-                      <Button variant="destructive" className="sm:flex-1" onClick={() => handleDelete(profesional)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Eliminar
-                      </Button>
+                      {canManageCrud ? (
+                        <>
+                          <Button variant="outline" className="sm:flex-1" onClick={() => openEditModal(profesional)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button variant="destructive" className="sm:flex-1" onClick={() => handleDelete(profesional)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 ))}

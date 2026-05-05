@@ -12,7 +12,7 @@ import type { UserRole } from "@/types/roles";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PFC Gestion System",
+  title: "Gestion PFC - Cooperativa Electrica de San Jose de la Dormida",
   description: "Sistema de gestion del Plan de Financiamiento Colectivo",
 };
 

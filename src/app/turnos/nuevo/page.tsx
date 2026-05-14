@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
+import { etiquetaMesAnioTurnoEs, esFechaTurnoISOValida } from "@/lib/fecha-turno";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
 type SocioGrupoRow = {
@@ -70,6 +71,14 @@ const emptyForm: FormState = {
   observaciones: "",
 };
 
+function profesionalSinCupoEnFechaSeleccionada(profesional: Profesional, fechaSeleccionada: string): boolean {
+  if (!esFechaTurnoISOValida(fechaSeleccionada)) return false;
+  const configurado = Number(profesional.pacientes_mensuales ?? 0);
+  if (!Number.isFinite(configurado) || configurado <= 0) return false;
+  if (profesional.cupo_restante === null || profesional.cupo_restante === undefined) return false;
+  return Number(profesional.cupo_restante) <= 0;
+}
+
 export default function NuevoTurnoPage() {
   const { role } = useUser();
   const [loading, setLoading] = useState(true);
@@ -127,6 +136,43 @@ export default function NuevoTurnoPage() {
     );
   }, [coberturaPaciente, prestaciones, selectedEspecialidadId]);
 
+  const ayudaCupoMensual = useMemo(() => {
+    if (!selectedProfesional) return null;
+    if (!form.fecha || !esFechaTurnoISOValida(form.fecha)) {
+      return {
+        className: "text-slate-600 dark:text-slate-300",
+        texto: "Seleccioná fecha para revisar disponibilidad de cupo mensual.",
+      };
+    }
+
+    const tope = Number(selectedProfesional.pacientes_mensuales ?? 0);
+    if (!Number.isFinite(tope) || tope <= 0) return null;
+
+    const usados = Number(selectedProfesional.turnos_mes ?? 0);
+    const restantes = Number(selectedProfesional.cupo_restante ?? 0);
+    const periodo = etiquetaMesAnioTurnoEs(form.fecha);
+
+    if (restantes > 0) {
+      return {
+        className: "text-emerald-800 dark:text-emerald-400",
+        texto: `Cupo disponible para ${periodo}: ${restantes} turnos restantes (${usados} / ${tope}).`,
+      };
+    }
+
+    return {
+      className: "text-destructive",
+      texto: `Profesional sin disponibilidad mensual para ${periodo}.`,
+    };
+  }, [selectedProfesional, form.fecha]);
+
+  const altaTurnoSinCupoMensual = useMemo(() => {
+    return (
+      !!selectedProfesional &&
+      esFechaTurnoISOValida(form.fecha) &&
+      profesionalSinCupoEnFechaSeleccionada(selectedProfesional, form.fecha)
+    );
+  }, [selectedProfesional, form.fecha]);
+
   useEffect(() => {
     async function bootstrap() {
       try {
@@ -161,6 +207,8 @@ export default function NuevoTurnoPage() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     async function loadPrestaciones() {
       if (!Number.isInteger(selectedEspecialidadId) || selectedEspecialidadId <= 0 || !form.categoria) {
         setPrestaciones([]);
@@ -169,31 +217,53 @@ export default function NuevoTurnoPage() {
         return;
       }
 
-      const [prestacionesRes, profesionalesRes] = await Promise.all([
-        fetch(
-          `/api/prestaciones-disponibles?categoria=${encodeURIComponent(form.categoria)}&especialidad_id=${selectedEspecialidadId}`,
-          { cache: "no-store" }
-        ),
-        fetch(`/api/profesionales?especialidad_id=${selectedEspecialidadId}`, { cache: "no-store" }),
-      ]);
-      const prestacionesData = (await prestacionesRes.json()) as { success: boolean; data?: Prestacion[]; error?: string };
-      const profesionalesData = (await profesionalesRes.json()) as { success: boolean; data?: Profesional[]; error?: string };
+      const cupoParam =
+        typeof form.fecha === "string" && esFechaTurnoISOValida(form.fecha)
+          ? `&cupo_para_fecha=${encodeURIComponent(form.fecha)}`
+          : "";
 
-      if (!prestacionesRes.ok || !prestacionesData.success) {
-        toast.error(prestacionesData.error ?? "No se pudieron cargar prestaciones");
-        return;
-      }
-      if (!profesionalesRes.ok || !profesionalesData.success) {
-        toast.error(profesionalesData.error ?? "No se pudieron cargar profesionales");
-        return;
-      }
+      try {
+        const [prestacionesRes, profesionalesRes] = await Promise.all([
+          fetch(
+            `/api/prestaciones-disponibles?categoria=${encodeURIComponent(form.categoria)}&especialidad_id=${selectedEspecialidadId}`,
+            { cache: "no-store", signal: controller.signal }
+          ),
+          fetch(`/api/profesionales?especialidad_id=${selectedEspecialidadId}${cupoParam}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+        ]);
+        const prestacionesData = (await prestacionesRes.json()) as {
+          success: boolean;
+          data?: Prestacion[];
+          error?: string;
+        };
+        const profesionalesData = (await profesionalesRes.json()) as {
+          success: boolean;
+          data?: Profesional[];
+          error?: string;
+        };
 
-      setPrestaciones(prestacionesData.data ?? []);
-      setProfesionales(profesionalesData.data ?? []);
+        if (!prestacionesRes.ok || !prestacionesData.success) {
+          toast.error(prestacionesData.error ?? "No se pudieron cargar prestaciones");
+          return;
+        }
+        if (!profesionalesRes.ok || !profesionalesData.success) {
+          toast.error(profesionalesData.error ?? "No se pudieron cargar profesionales");
+          return;
+        }
+
+        setPrestaciones(prestacionesData.data ?? []);
+        setProfesionales(profesionalesData.data ?? []);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        toast.error(error instanceof Error ? error.message : "No se pudieron cargar datos");
+      }
     }
 
-    loadPrestaciones();
-  }, [form.categoria, selectedEspecialidadId]);
+    void loadPrestaciones();
+    return () => controller.abort();
+  }, [form.categoria, selectedEspecialidadId, form.fecha]);
 
   useEffect(() => {
     async function loadDisponibilidad() {
@@ -354,18 +424,6 @@ export default function NuevoTurnoPage() {
   }
 
   async function handleGuardar() {
-    const restanteProfesional = Number(selectedProfesional?.cupo_restante ?? NaN);
-    const cupoProfesional = Number(selectedProfesional?.pacientes_mensuales ?? NaN);
-    if (
-      Number.isFinite(cupoProfesional) &&
-      cupoProfesional > 0 &&
-      Number.isFinite(restanteProfesional) &&
-      restanteProfesional <= 0
-    ) {
-      toast.error("El profesional alcanzo su limite mensual");
-      return;
-    }
-
     const payload = {
       cod_soc: Number(form.cod_soc),
       adherente_codigo: Number(form.adherente_codigo),
@@ -642,11 +700,7 @@ export default function NuevoTurnoPage() {
                     <option
                       key={item.id}
                       value={String(item.id)}
-                      disabled={
-                        Number.isFinite(Number(item.pacientes_mensuales)) &&
-                        Number(item.pacientes_mensuales) > 0 &&
-                        Number(item.cupo_restante ?? 0) <= 0
-                      }
+                      disabled={profesionalSinCupoEnFechaSeleccionada(item, form.fecha)}
                     >
                       {item.nombre} - {item.especialidad}
                     </option>
@@ -654,8 +708,15 @@ export default function NuevoTurnoPage() {
                 </select>
               </label>
 
+              {ayudaCupoMensual ? (
+                <div className="rounded-2xl border border-border bg-muted px-4 py-3 text-sm md:col-span-2">
+                  <p className={`font-medium leading-relaxed ${ayudaCupoMensual.className}`}>
+                    {ayudaCupoMensual.texto}
+                  </p>
+                </div>
+              ) : null}
+
               <label className="grid gap-2">
-                <span className="field-label">Fecha</span>
                 {isPrestacionTraslado ? (
                   <Input
                     type="date"
@@ -721,7 +782,7 @@ export default function NuevoTurnoPage() {
                   Cancelar
                 </Button>
               </Link>
-              <Button className="w-full sm:w-auto" onClick={handleGuardar} disabled={isSubmitting}>
+              <Button className="w-full sm:w-auto" onClick={handleGuardar} disabled={isSubmitting || altaTurnoSinCupoMensual}>
                 {isSubmitting ? "Guardando..." : "Confirmar turno"}
               </Button>
             </div>

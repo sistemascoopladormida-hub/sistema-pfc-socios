@@ -2,6 +2,7 @@ import sql from "mssql";
 import { NextResponse } from "next/server";
 
 import { resolverBeneficio } from "@/lib/adherentes-beneficios";
+import { etiquetaMesAnioTurnoEs } from "@/lib/fecha-turno";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type CrearTurnoBody = {
@@ -633,9 +634,10 @@ export async function POST(request: Request) {
       const turnosDelMes = Number(cupoMensualResult.recordset[0]?.total ?? 0);
       const cupoMensual = Number(profesional.cupo_mensual ?? 0);
       if (cupoMensual > 0 && turnosDelMes >= cupoMensual) {
+        const periodo = etiquetaMesAnioTurnoEs(payload.fecha);
         return NextResponse.json({
           success: false,
-          error: "El profesional alcanzo el cupo mensual",
+          error: `Profesional sin disponibilidad mensual para ${periodo}`,
         });
       }
     }

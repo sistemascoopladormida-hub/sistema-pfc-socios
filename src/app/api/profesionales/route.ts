@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
+import { esFechaTurnoISOValida } from "@/lib/fecha-turno";
 import { getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type TotalColumnName = "pacientes_mensuales" | "paciente_mensuales";
@@ -32,6 +33,9 @@ export async function GET(request: Request) {
         ? Number(especialidadParam)
         : null;
 
+    const cupoParaFechaRaw = String(url.searchParams.get("cupo_para_fecha") ?? "").trim();
+    const cupoRefFechaIso = esFechaTurnoISOValida(cupoParaFechaRaw) ? cupoParaFechaRaw : null;
+
     const pool = await getSqlConnectionPfc();
     const pacientesColumn = await resolvePacientesColumn(pool);
     const pacientesExpr = pacientesColumn ? `p.${pacientesColumn}` : "CAST(NULL AS INT)";
@@ -41,6 +45,7 @@ export async function GET(request: Request) {
     if (especialidadId && especialidadId > 0) {
       dbRequest.input("especialidad_id", sql.Int, especialidadId);
     }
+    dbRequest.input("cupo_ref", sql.Date, cupoRefFechaIso);
 
     const result = await dbRequest.query(`
       SELECT
@@ -62,11 +67,11 @@ export async function GET(request: Request) {
         SELECT
           profesional_id,
           COUNT(*) as turnos_mes
-        FROM turnos
+        FROM turnos t
         WHERE
           estado IN ('RESERVADO','ATENDIDO')
-          AND MONTH(fecha) = MONTH(GETDATE())
-          AND YEAR(fecha) = YEAR(GETDATE())
+          AND MONTH(t.fecha) = MONTH(COALESCE(@cupo_ref, CAST(GETDATE() AS date)))
+          AND YEAR(t.fecha) = YEAR(COALESCE(@cupo_ref, CAST(GETDATE() AS date)))
         GROUP BY profesional_id
       ) tm ON tm.profesional_id = p.id
       ${especialidadId && especialidadId > 0 ? "WHERE p.especialidad_id = @especialidad_id" : ""}

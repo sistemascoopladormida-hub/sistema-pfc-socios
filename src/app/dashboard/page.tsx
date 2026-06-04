@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Calendar, Clock3, Plus, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, CalendarClock, Clock3, Users } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -53,6 +53,22 @@ type DashboardResponse = {
       fecha: string;
       hora: string;
     }>;
+    operacion_hoy: {
+      programados: number;
+      atendidos: number;
+      ausentes: number;
+      cancelados: number;
+      total: number;
+      por_cerrar: number;
+    };
+    proximos_turnos_hoy: Array<{
+      id: number;
+      hora: string;
+      socio: string;
+      profesional: string;
+      prestacion: string;
+      estado: string;
+    }>;
   };
   error?: string;
 };
@@ -102,6 +118,104 @@ function DashboardSkeleton() {
         <Skeleton className="h-[340px] rounded-[24px]" />
       </div>
     </div>
+  );
+}
+
+function formatFechaHoyEs() {
+  const texto = new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date());
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function OperacionHoyPanel({
+  operacion,
+  proximos,
+}: {
+  operacion: DashboardData["operacion_hoy"];
+  proximos: DashboardData["proximos_turnos_hoy"];
+}) {
+  const avance =
+    operacion.total > 0 ? Math.min(100, Math.round((operacion.atendidos / operacion.total) * 100)) : 0;
+  const proximosVisibles = proximos.slice(0, 3);
+  const hayProximos = proximosVisibles.length > 0;
+
+  const mensajeEstado =
+    operacion.total === 0
+      ? "No hay turnos cargados para hoy."
+      : !hayProximos && operacion.por_cerrar > 0
+        ? `${operacion.por_cerrar} reserva${operacion.por_cerrar === 1 ? "" : "s"} de hoy sin actualizar de estado.`
+        : !hayProximos
+          ? "No quedan turnos por horario. Jornada al día."
+          : null;
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-primary" />
+          Operación de hoy
+        </CardTitle>
+        <CardDescription>{formatFechaHoyEs()}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <span className="font-semibold text-foreground">{operacion.programados}</span> programados ·{" "}
+          <span className="font-semibold text-emerald-700 dark:text-emerald-300">{operacion.atendidos}</span> atendidos
+          ·{" "}
+          <span
+            className={
+              operacion.por_cerrar > 0
+                ? "font-semibold text-amber-800 dark:text-amber-200"
+                : "font-semibold text-foreground"
+            }
+          >
+            {operacion.por_cerrar}
+          </span>{" "}
+          por cerrar
+          {operacion.total > 0 ? (
+            <span className="text-muted-foreground"> · {avance}% del día</span>
+          ) : null}
+        </p>
+
+        {hayProximos ? (
+          <div className="space-y-1.5">
+            {proximosVisibles.map((turno, index) => (
+              <Link
+                key={turno.id}
+                href={`/turnos/${turno.id}`}
+                className={`flex items-center gap-2 rounded-2xl border px-3 py-2 transition-colors hover:bg-muted ${
+                  index === 0 ? "border-primary/20 bg-primary/5 hover:bg-primary/10" : "border-border bg-card"
+                }`}
+              >
+                <span
+                  className={`shrink-0 rounded-xl px-2 py-0.5 text-xs font-semibold ${
+                    index === 0 ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                  }`}
+                >
+                  {turno.hora}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                  <span className="font-medium">{turno.socio}</span>
+                  <span className="text-muted-foreground"> · {turno.prestacion}</span>
+                </span>
+                <ArrowRight className={`h-3.5 w-3.5 shrink-0 ${index === 0 ? "text-primary" : "text-muted-foreground"}`} />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">{mensajeEstado}</p>
+        )}
+
+        <div className="flex justify-end text-sm">
+          <Link href="/turnos" className="font-medium text-primary hover:underline">
+            Ver turnos
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -242,24 +356,20 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Resumen del dia</CardTitle>
-            <CardDescription>Lo mas importante para empezar a trabajar sin perder tiempo.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
-              Desde aca podes ver el estado general, detectar tendencias y hacer la accion principal del sistema.
-            </p>
-            <Link href="/turnos/nuevo" className="inline-flex">
-              <button className="inline-flex h-12 items-center rounded-2xl bg-primary px-5 text-sm font-medium text-primary-foreground shadow-[0_10px_24px_rgba(16,185,129,0.18)] transition-colors hover:brightness-105">
-                <Plus className="mr-2 h-4 w-4" />
-                Crear turno
-              </button>
-            </Link>
-          </CardContent>
-        </Card>
+      <section className="grid items-start gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <OperacionHoyPanel
+          operacion={
+            dashboardData.operacion_hoy ?? {
+              programados: 0,
+              atendidos: 0,
+              ausentes: 0,
+              cancelados: 0,
+              total: 0,
+              por_cerrar: 0,
+            }
+          }
+          proximos={dashboardData.proximos_turnos_hoy ?? []}
+        />
 
         <Card>
           <CardHeader>

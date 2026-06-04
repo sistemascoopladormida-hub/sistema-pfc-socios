@@ -38,6 +38,13 @@ type TurnoRecienteRow = {
   profesional: string;
 };
 
+type TurnoOperacionHoyRow = TurnoRecienteRow;
+
+type EstadoHoyRow = {
+  estado: string;
+  total: number | string;
+};
+
 type SocioLookupRow = {
   COD_SOC: number | string;
   ADHERENTE_CODIGO: number | string;
@@ -49,6 +56,69 @@ type SocioLookupRow = {
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeHoraDashboard(raw: string | Date) {
+  if (raw instanceof Date) {
+    return raw.toISOString().slice(11, 16);
+  }
+  const trimmed = String(raw ?? "").trim();
+  const match = trimmed.match(/(\d{2}):(\d{2})/);
+  if (!match) return trimmed;
+  return `${match[1]}:${match[2]}`;
+}
+
+async function buildSocioNombreMap(
+  billingPool: Awaited<ReturnType<typeof getSqlConnection>>,
+  codSocList: number[]
+) {
+  const socioNombreMap = new Map<string, string>();
+  if (codSocList.length === 0) return socioNombreMap;
+
+  const sociosResult = await billingPool.request().query(`
+    SELECT
+      COD_SOC,
+      ADHERENTE_CODIGO,
+      ADHERENTE_NOMBRE,
+      APELLIDOS,
+      VINCULO
+    FROM PR_DORM.dbo.vw_socios_adherentes
+    WHERE COD_SOC IN (${codSocList.join(",")})
+  `);
+
+  for (const socio of sociosResult.recordset as SocioLookupRow[]) {
+    const codSoc = Number(socio.COD_SOC);
+    const adherenteCodigo = Number(socio.ADHERENTE_CODIGO);
+    const nombre = String(socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "").trim();
+    if (!nombre) continue;
+    socioNombreMap.set(`${codSoc}-${adherenteCodigo}`, nombre);
+    if (String(socio.VINCULO ?? "").trim().toUpperCase() === "TITULAR") {
+      socioNombreMap.set(`${codSoc}-0`, nombre);
+    }
+  }
+
+  return socioNombreMap;
+}
+
+function mapTurnoConSocio(
+  row: TurnoOperacionHoyRow,
+  socioNombreMap: Map<string, string>
+) {
+  const codSoc = Number(row.cod_soc);
+  const adherente = Number(row.adherente_codigo);
+  return {
+    id: row.id,
+    hora: normalizeHoraDashboard(row.hora),
+    estado: String(row.estado).toUpperCase(),
+    socio:
+      socioNombreMap.get(`${codSoc}-${adherente}`) ??
+      socioNombreMap.get(`${codSoc}-0`) ??
+      `Socio ${codSoc}`,
+    cod_soc: row.cod_soc,
+    adherente_codigo: row.adherente_codigo,
+    prestacion: row.prestacion,
+    profesional: row.profesional,
+  };
 }
 
 export async function GET() {
@@ -74,6 +144,9 @@ export async function GET() {
       turnosRecientesResult,
       turnosPorMesResult,
       turnosReservadosVencidosResult,
+      turnosEstadoHoyResult,
+      turnosPorCerrarHoyResult,
+      turnosProximosHoyResult,
     ] = await Promise.all([
       pfcPool.request().input("anio", ANIO_EN_CURSO).query(`
         SELECT COUNT(*) as total
@@ -126,6 +199,37 @@ export async function GET() {
               AND CAST(hora AS time) < CAST(GETDATE() AS time)
             )
           )
+      `),
+      pfcPool.request().query(`
+        SELECT estado, COUNT(*) AS total
+        FROM turnos
+        WHERE fecha = CAST(GETDATE() AS date)
+        GROUP BY estado
+      `),
+      pfcPool.request().query(`
+        SELECT COUNT(*) AS total
+        FROM turnos
+        WHERE fecha = CAST(GETDATE() AS date)
+          AND estado = 'RESERVADO'
+          AND CAST(hora AS time) < CAST(GETDATE() AS time)
+      `),
+      pfcPool.request().query(`
+        SELECT TOP 3
+          t.id,
+          t.fecha,
+          t.hora,
+          t.estado,
+          t.cod_soc,
+          t.adherente_codigo,
+          p.nombre as prestacion,
+          pr.nombre as profesional
+        FROM turnos t
+        JOIN prestaciones p ON p.id = t.prestacion_id
+        JOIN profesionales pr ON pr.id = t.profesional_id
+        WHERE t.fecha = CAST(GETDATE() AS date)
+          AND t.estado = 'RESERVADO'
+          AND CAST(t.hora AS time) >= CAST(GETDATE() AS time)
+        ORDER BY t.hora ASC
       `),
     ]);
 
@@ -232,50 +336,45 @@ export async function GET() {
     });
 
     const turnosRows = turnosRecientesResult.recordset as TurnoRecienteRow[];
+    const proximosRows = turnosProximosHoyResult.recordset as TurnoOperacionHoyRow[];
+
+    const estadoHoyMap = (turnosEstadoHoyResult.recordset as EstadoHoyRow[]).reduce(
+      (acc, row) => {
+        const key = String(row.estado ?? "").toUpperCase();
+        acc[key] = toNumber(row.total);
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+
+    const operacionHoy = {
+      programados: estadoHoyMap.RESERVADO ?? 0,
+      atendidos: estadoHoyMap.ATENDIDO ?? 0,
+      ausentes: estadoHoyMap.AUSENTE ?? 0,
+      cancelados: estadoHoyMap.CANCELADO ?? 0,
+      total:
+        (estadoHoyMap.RESERVADO ?? 0) +
+        (estadoHoyMap.ATENDIDO ?? 0) +
+        (estadoHoyMap.AUSENTE ?? 0) +
+        (estadoHoyMap.CANCELADO ?? 0),
+      por_cerrar: toNumber((turnosPorCerrarHoyResult.recordset[0] as TotalRow | undefined)?.total),
+    };
+
     const codSocList = [
-      ...new Set(turnosRows.map((item) => Number(item.cod_soc)).filter((value) => Number.isInteger(value))),
+      ...new Set(
+        [...turnosRows, ...proximosRows]
+          .map((item) => Number(item.cod_soc))
+          .filter((value) => Number.isInteger(value))
+      ),
     ];
-    const socioNombreMap = new Map<string, string>();
-
-    if (codSocList.length > 0) {
-      const sociosResult = await billingPool.request().query(`
-        SELECT
-          COD_SOC,
-          ADHERENTE_CODIGO,
-          ADHERENTE_NOMBRE,
-          APELLIDOS,
-          VINCULO
-        FROM PR_DORM.dbo.vw_socios_adherentes
-        WHERE COD_SOC IN (${codSocList.join(",")})
-      `);
-
-      for (const socio of sociosResult.recordset as SocioLookupRow[]) {
-        const codSoc = Number(socio.COD_SOC);
-        const adherenteCodigo = Number(socio.ADHERENTE_CODIGO);
-        const nombre = String(socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "").trim();
-        if (!nombre) continue;
-        socioNombreMap.set(`${codSoc}-${adherenteCodigo}`, nombre);
-        if (String(socio.VINCULO ?? "").trim().toUpperCase() === "TITULAR") {
-          socioNombreMap.set(`${codSoc}-0`, nombre);
-        }
-      }
-    }
+    const socioNombreMap = await buildSocioNombreMap(billingPool, codSocList);
 
     const turnosRecientes = turnosRows.map((row) => ({
-      id: row.id,
-      // Convertimos a Date antes de llamar al método
-      fecha: new Date(row.fecha).toISOString().split('T')[0], 
-      hora: new Date(row.hora).toISOString().split('T')[1].slice(0, 5),
-      estado: row.estado,
-      socio:
-        socioNombreMap.get(`${Number(row.cod_soc)}-${Number(row.adherente_codigo)}`) ??
-        socioNombreMap.get(`${Number(row.cod_soc)}-0`) ??
-        `Socio ${row.cod_soc}`,
-      cod_soc: row.cod_soc,
-      adherente_codigo: row.adherente_codigo,
-      prestacion: row.prestacion,
-      profesional: row.profesional,
+      ...mapTurnoConSocio(row, socioNombreMap),
+      fecha: new Date(row.fecha).toISOString().split("T")[0],
     }));
+
+    const proximos_turnos_hoy = proximosRows.map((row) => mapTurnoConSocio(row, socioNombreMap));
 
     return NextResponse.json({
       success: true,
@@ -295,6 +394,8 @@ export async function GET() {
         turnos_por_mes: turnosPorMes,
         turnos_recientes: turnosRecientes,
         turnos_reservados_vencidos: turnosReservadosVencidos,
+        operacion_hoy: operacionHoy,
+        proximos_turnos_hoy: proximos_turnos_hoy,
       },
     });
   } catch (error) {

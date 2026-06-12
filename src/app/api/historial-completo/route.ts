@@ -2,6 +2,7 @@ import sql from "mssql";
 import { NextResponse } from "next/server";
 
 import { calcularEdad, resolverBeneficio } from "@/lib/adherentes-beneficios";
+import { calcularCoberturaBeneficiario, requiereCoberturaPropia } from "@/lib/pfc-rules";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type HistorialRow = {
@@ -186,12 +187,25 @@ export async function GET(request: Request) {
       categoriaPaciente = String(pacienteRow?.DES_CAT ?? "").trim();
     }
 
+    const coberturaPaciente = calcularCoberturaBeneficiario({
+      VINCULO: pacienteRow?.VINCULO ?? "TITULAR",
+      FECHA_NACIMIENTO: pacienteRow?.FECHA_NACIMIENTO,
+      EDAD: calcularEdad(pacienteRow?.FECHA_NACIMIENTO),
+    });
+
     const tipoBeneficio = resolverBeneficio(
       pacienteRow?.VINCULO ?? "TITULAR",
       pacienteRow?.FECHA_NACIMIENTO
     );
     const adherentesConBeneficioTitular = grupoRows
-      .filter((row) => resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO) === "TITULAR")
+      .filter(
+        (row) =>
+          !requiereCoberturaPropia({
+            VINCULO: row.VINCULO,
+            FECHA_NACIMIENTO: row.FECHA_NACIMIENTO,
+            EDAD: calcularEdad(row.FECHA_NACIMIENTO),
+          })
+      )
       .map((row) => Number(row.ADHERENTE_CODIGO))
       .filter((value) => Number.isInteger(value) && value >= 0);
     const turnosCoberturaScopeColumn = await resolveColumnByAliases(pool, "turnos", [
@@ -411,6 +425,9 @@ export async function GET(request: Request) {
               dni: String(pacienteRow.DNI_ADHERENTE || "No registrado"),
               edad: calcularEdad(pacienteRow.FECHA_NACIMIENTO),
               tipoBeneficio,
+              requiereCuotaPropia: coberturaPaciente.requiereCuotaPropia,
+              comparteCobertura: coberturaPaciente.comparteCobertura,
+              estadoBeneficio: coberturaPaciente.estadoBeneficio,
             }
           : null,
         resumen,

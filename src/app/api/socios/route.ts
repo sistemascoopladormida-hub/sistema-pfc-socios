@@ -1,7 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { calcularEdad, esVinculoHijo, resolverBeneficio } from "@/lib/adherentes-beneficios";
+import { enriquecerSocioConCobertura } from "@/lib/pfc-rules";
 import { getSqlConnection } from "@/lib/sqlserver";
 
 type SocioRow = {
@@ -18,12 +18,18 @@ type SocioRow = {
 type ResumenRow = {
   total_resultados: number | string | null;
   titulares_total: number | string | null;
-  hijos_mayores_18: number | string | null;
   hijos_menores_18: number | string | null;
   conyuges_total: number | string | null;
   otros_total: number | string | null;
+  beneficiarios_cobertura_propia: number | string | null;
 };
-type SegmentoFiltro = "HIJOS_MAYORES" | "HIJOS_MENORES" | "CONYUGES" | "OTROS" | "TITULARES";
+type SegmentoFiltro =
+  | "HIJOS_MENORES"
+  | "CONYUGES"
+  | "OTROS"
+  | "TITULARES"
+  | "COBERTURA_FAMILIAR"
+  | "REQUIERE_REGULARIZACION";
 
 /** Vista pesada: cache más largo en listado sin filtro acelera recargas y navegación. */
 const SOCIOS_CACHE_TTL_MS_EMPTY = 45_000;
@@ -36,10 +42,10 @@ const sociosCache = new Map<
     resumen: {
       total_resultados: number;
       titulares_total: number;
-      hijos_mayores_18: number;
       hijos_menores_18: number;
       conyuges_total: number;
       otros_total: number;
+      beneficiarios_cobertura_propia: number;
     };
   }
 >();
@@ -72,6 +78,22 @@ const EDAD_YEARS_SQL = `
   )
 `;
 
+const REQUIERE_CUOTA_PROPIA_SQL = `
+  ${VINCULO_NORMALIZED_SQL} <> 'TITULAR'
+  AND ${VINCULO_NORMALIZED_SQL} NOT LIKE 'CONYUG%'
+  AND FECHA_NACIMIENTO IS NOT NULL
+  AND ${EDAD_YEARS_SQL} >= 18
+`;
+
+const RESUMEN_AGGREGATES = `
+  COUNT(*) AS total_resultados,
+  SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} = 'TITULAR' THEN 1 ELSE 0 END) AS titulares_total,
+  SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18) THEN 1 ELSE 0 END) AS hijos_menores_18,
+  SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%' THEN 1 ELSE 0 END) AS conyuges_total,
+  SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} IN ('OTROS', 'OTRO') THEN 1 ELSE 0 END) AS otros_total,
+  SUM(CASE WHEN ${REQUIERE_CUOTA_PROPIA_SQL} THEN 1 ELSE 0 END) AS beneficiarios_cobertura_propia
+`;
+
 function toPositiveInt(value: string | null, fallback: number) {
   const parsed = Number(value ?? "");
   if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
@@ -81,11 +103,12 @@ function toPositiveInt(value: string | null, fallback: number) {
 function parseSegmentoFiltro(value: string | null): SegmentoFiltro | null {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (
-    normalized === "HIJOS_MAYORES" ||
     normalized === "HIJOS_MENORES" ||
     normalized === "CONYUGES" ||
     normalized === "OTROS" ||
-    normalized === "TITULARES"
+    normalized === "TITULARES" ||
+    normalized === "COBERTURA_FAMILIAR" ||
+    normalized === "REQUIERE_REGULARIZACION"
   ) {
     return normalized as SegmentoFiltro;
   }
@@ -97,10 +120,12 @@ function segmentoWhereSql(segmento: SegmentoFiltro | null) {
   if (segmento === "TITULARES") return `${VINCULO_NORMALIZED_SQL} = 'TITULAR'`;
   if (segmento === "CONYUGES") return `${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%'`;
   if (segmento === "OTROS") return `${VINCULO_NORMALIZED_SQL} IN ('OTRO', 'OTROS')`;
-  if (segmento === "HIJOS_MAYORES") {
-    return `${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND FECHA_NACIMIENTO IS NOT NULL AND ${EDAD_YEARS_SQL} >= 18`;
+  if (segmento === "REQUIERE_REGULARIZACION") return REQUIERE_CUOTA_PROPIA_SQL;
+  if (segmento === "COBERTURA_FAMILIAR") return `NOT (${REQUIERE_CUOTA_PROPIA_SQL})`;
+  if (segmento === "HIJOS_MENORES") {
+    return `${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18)`;
   }
-  return `${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18)`;
+  return "";
 }
 
 function isDigitsOnly(value: string) {
@@ -108,19 +133,7 @@ function isDigitsOnly(value: string) {
 }
 
 function mapSociosRows(rows: SocioRow[]) {
-  return rows.map((row) => {
-    const edad = calcularEdad(row.FECHA_NACIMIENTO);
-    const esHijo = esVinculoHijo(row.VINCULO);
-    const beneficio = resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO);
-    return {
-      ...row,
-      EDAD: edad,
-      ES_HIJO: esHijo,
-      ES_HIJO_MAYOR_18: esHijo && Number(edad) >= 18,
-      REQUIERE_CUOTA_PROPIA: beneficio === "PROPIO",
-      TIPO_BENEFICIO: beneficio,
-    };
-  });
+  return rows.map((row) => enriquecerSocioConCobertura(row));
 }
 
 function toNumber(value: unknown) {
@@ -171,12 +184,7 @@ export async function GET(request: Request) {
       }
       resumenResult = await pool.request().query(`
         SELECT
-          COUNT(*) AS total_resultados,
-          SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} = 'TITULAR' THEN 1 ELSE 0 END) AS titulares_total,
-          SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND FECHA_NACIMIENTO IS NOT NULL AND ${EDAD_YEARS_SQL} >= 18 THEN 1 ELSE 0 END) AS hijos_mayores_18,
-          SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18) THEN 1 ELSE 0 END) AS hijos_menores_18,
-          SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%' THEN 1 ELSE 0 END) AS conyuges_total,
-          SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} IN ('OTROS', 'OTRO') THEN 1 ELSE 0 END) AS otros_total
+          ${RESUMEN_AGGREGATES}
         ${FROM_SOCIOS}
       `);
     } else if (isDigitsOnly(buscar)) {
@@ -212,12 +220,7 @@ export async function GET(request: Request) {
           .input("dni_prefix", sql.VarChar(121), `${buscar}%`)
           .query(`
             SELECT
-              COUNT(*) AS total_resultados,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} = 'TITULAR' THEN 1 ELSE 0 END) AS titulares_total,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND FECHA_NACIMIENTO IS NOT NULL AND ${EDAD_YEARS_SQL} >= 18 THEN 1 ELSE 0 END) AS hijos_mayores_18,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18) THEN 1 ELSE 0 END) AS hijos_menores_18,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%' THEN 1 ELSE 0 END) AS conyuges_total,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} IN ('OTROS', 'OTRO') THEN 1 ELSE 0 END) AS otros_total
+              ${RESUMEN_AGGREGATES}
             ${FROM_SOCIOS}
             WHERE
               (COD_SOC = @cod_soc OR DNI_ADHERENTE LIKE @dni_prefix)
@@ -236,12 +239,7 @@ export async function GET(request: Request) {
           .input("dni_prefix", sql.VarChar(121), `${buscar}%`)
           .query(`
             SELECT
-              COUNT(*) AS total_resultados,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} = 'TITULAR' THEN 1 ELSE 0 END) AS titulares_total,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND FECHA_NACIMIENTO IS NOT NULL AND ${EDAD_YEARS_SQL} >= 18 THEN 1 ELSE 0 END) AS hijos_mayores_18,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18) THEN 1 ELSE 0 END) AS hijos_menores_18,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%' THEN 1 ELSE 0 END) AS conyuges_total,
-              SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} IN ('OTROS', 'OTRO') THEN 1 ELSE 0 END) AS otros_total
+              ${RESUMEN_AGGREGATES}
             ${FROM_SOCIOS}
             WHERE DNI_ADHERENTE LIKE @dni_prefix
           `);
@@ -267,12 +265,7 @@ export async function GET(request: Request) {
         .input("prefix", sql.VarChar(121), `${buscar}%`)
         .query(`
           SELECT
-            COUNT(*) AS total_resultados,
-            SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} = 'TITULAR' THEN 1 ELSE 0 END) AS titulares_total,
-            SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND FECHA_NACIMIENTO IS NOT NULL AND ${EDAD_YEARS_SQL} >= 18 THEN 1 ELSE 0 END) AS hijos_mayores_18,
-            SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'HIJ%' AND (FECHA_NACIMIENTO IS NULL OR ${EDAD_YEARS_SQL} < 18) THEN 1 ELSE 0 END) AS hijos_menores_18,
-            SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} LIKE 'CONYUG%' THEN 1 ELSE 0 END) AS conyuges_total,
-            SUM(CASE WHEN ${VINCULO_NORMALIZED_SQL} IN ('OTROS', 'OTRO') THEN 1 ELSE 0 END) AS otros_total
+            ${RESUMEN_AGGREGATES}
           ${FROM_SOCIOS}
           WHERE
             (APELLIDOS LIKE @prefix OR ADHERENTE_NOMBRE LIKE @prefix)
@@ -284,10 +277,10 @@ export async function GET(request: Request) {
     const resumen = {
       total_resultados: toNumber(resumenRow?.total_resultados),
       titulares_total: toNumber(resumenRow?.titulares_total),
-      hijos_mayores_18: toNumber(resumenRow?.hijos_mayores_18),
       hijos_menores_18: toNumber(resumenRow?.hijos_menores_18),
       conyuges_total: toNumber(resumenRow?.conyuges_total),
       otros_total: toNumber(resumenRow?.otros_total),
+      beneficiarios_cobertura_propia: toNumber(resumenRow?.beneficiarios_cobertura_propia),
     };
 
     sociosCache.set(cacheKey, {

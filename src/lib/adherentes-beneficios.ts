@@ -1,3 +1,5 @@
+import { calcularCoberturaBeneficiario } from "@/lib/pfc-rules";
+
 export type TipoBeneficio = "PROPIO" | "TITULAR" | "NO_DEFINIDO";
 
 function normalize(value: unknown) {
@@ -35,16 +37,11 @@ export function esVinculoHijo(vinculo: unknown) {
 }
 
 export function resolverBeneficio(vinculo: unknown, fechaNacimiento: unknown): TipoBeneficio {
-  const edad = calcularEdad(fechaNacimiento);
-  if (esVinculoHijo(vinculo)) {
-    if (edad === null) return "NO_DEFINIDO";
-    return edad >= 18 ? "PROPIO" : "TITULAR";
-  }
+  const { comparteCobertura } = calcularCoberturaBeneficiario({
+    VINCULO: vinculo,
+    FECHA_NACIMIENTO: fechaNacimiento,
+  });
 
-  const v = normalize(vinculo);
-  if (v === "CONYUGE" || v === "OTROS" || v === "OTRO" || v === "TITULAR") {
-    return "TITULAR";
-  }
-
-  return "TITULAR";
+  if (comparteCobertura) return "TITULAR";
+  return "PROPIO";
 }

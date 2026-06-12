@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Calendar, CalendarClock, Clock3, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, CalendarClock, Clock3, UserCheck, Users } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -31,9 +31,12 @@ type DashboardResponse = {
     personas_cubiertas: number;
     socios_titulares: number;
     socios_adherentes: number;
-    hijos_mayores_18: number;
-    hijos_menores_18: number;
     adherentes_beneficio_titular: number;
+    beneficiarios_cobertura_propia: number;
+    alertas: {
+      turnos_vencidos: number;
+      beneficiarios_cobertura_propia: number;
+    };
     turnos_hoy: number;
     profesionales_activos: number;
     prestaciones_mes: number;
@@ -325,8 +328,12 @@ export default function DashboardPage() {
     total: item.total,
   }));
 
-  const turnosPendientes = dashboardData.turnos_reservados_vencidos;
-  const turnosAusentes = actividadReciente.filter((turno) => turno.normalizedEstado === "AUSENTE").length;
+  const turnosPendientes =
+    dashboardData.alertas?.turnos_vencidos ?? dashboardData.turnos_reservados_vencidos;
+  const beneficiariosCoberturaPropia =
+    dashboardData.alertas?.beneficiarios_cobertura_propia ??
+    dashboardData.beneficiarios_cobertura_propia ??
+    0;
 
   const alerts: DashboardAlert[] = [
     turnosPendientes > 0
@@ -336,18 +343,11 @@ export default function DashboardPage() {
           href: "/turnos?alerta=vencidos",
         }
       : null,
-    turnosAusentes > 0
+    beneficiariosCoberturaPropia > 0
       ? {
-          id: "turnos-ausentes",
-          message: `${turnosAusentes} turnos marcados como ausentes.`,
-          href: "/turnos?estado=AUSENTE",
-        }
-      : null,
-    dashboardData.hijos_mayores_18 > 0
-      ? {
-          id: "hijos-mayores",
-          message: `${dashboardData.hijos_mayores_18} hijos cumplieron mayoría de edad y deben revisar plan propio.`,
-          href: "/socios?foco=hijos-mayores",
+          id: "cobertura-propia",
+          message: `${beneficiariosCoberturaPropia} beneficiarios requieren cobertura propia (mayor de 18 años, no cónyuge).`,
+          href: "/socios?segmento=REQUIERE_REGULARIZACION",
         }
       : null,
   ].filter(Boolean) as DashboardAlert[];
@@ -422,11 +422,11 @@ export default function DashboardPage() {
           tone="slate"
         />
         <MetricCard
-          label="Personas cubiertas"
-          value={dashboardData.personas_cubiertas}
-          description="Total de personas dentro del plan."
-          icon={Users}
-          tone="slate"
+          label="Cobertura propia requerida"
+          value={beneficiariosCoberturaPropia}
+          description="Beneficiarios mayores de 18 años que no son cónyuge."
+          icon={UserCheck}
+          tone={beneficiariosCoberturaPropia > 0 ? "amber" : "slate"}
         />
       </section>
 

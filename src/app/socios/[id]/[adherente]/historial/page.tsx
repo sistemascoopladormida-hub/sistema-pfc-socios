@@ -82,7 +82,9 @@ type HistorialCompletoResponse = {
       vinculo: string;
       dni: string;
       edad: number | null;
-      tipoBeneficio?: "PROPIO" | "TITULAR" | "NO_DEFINIDO" | string;
+      requiereCuotaPropia?: boolean;
+      comparteCobertura?: boolean;
+      estadoBeneficio?: "COBERTURA_FAMILIAR" | "CUOTA_PROPIA_REQUERIDA" | string;
     } | null;
     resumen: {
       total_turnos: number;
@@ -187,6 +189,7 @@ export default function HistorialSocioPage() {
   });
   const [categoria, setCategoria] = useState<string>("");
   const [paciente, setPaciente] = useState<PacienteInfo | null>(null);
+  const [requiereCuotaPropia, setRequiereCuotaPropia] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [isCargaManualOpen, setIsCargaManualOpen] = useState(false);
   const [turnoDetalleId, setTurnoDetalleId] = useState<number | null>(null);
@@ -260,6 +263,7 @@ export default function HistorialSocioPage() {
         setHistorial(data.data.historial ?? []);
         setCobertura(data.data.cobertura ?? []);
         setCategoria(data.data.categoria ?? "");
+        setRequiereCuotaPropia(Boolean(data.data.paciente?.requiereCuotaPropia));
         setPaciente(
           data.data.paciente
             ? {
@@ -421,6 +425,11 @@ export default function HistorialSocioPage() {
                 </p>
               ) : null}
             </div>
+            {requiereCuotaPropia ? (
+              <p className="mt-3 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-900 dark:text-amber-100">
+                Mayor de 18 años. Debe contar con cobertura propia. Las sesiones no descuentan del cupo del titular.
+              </p>
+            ) : null}
           </div>
         </CardContent>
         <CardContent className="grid gap-3 sm:grid-cols-4">
@@ -542,15 +551,17 @@ export default function HistorialSocioPage() {
                 Crear turno
               </Button>
             </Link>
-            <Button
-              type="button"
-              variant="outline"
-              className="border-slate-300 text-slate-800 hover:bg-slate-50"
-              onClick={() => setFamiliaDialogOpen(true)}
-            >
-              <Users className="mr-1 size-4 shrink-0" />
-              Ver turnos de familiares (misma cobertura)
-            </Button>
+            {!requiereCuotaPropia ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-slate-300 text-slate-800 hover:bg-slate-50"
+                onClick={() => setFamiliaDialogOpen(true)}
+              >
+                <Users className="mr-1 size-4 shrink-0" />
+                Ver turnos de familiares (misma cobertura)
+              </Button>
+            ) : null}
             {canManualLoad ? (
               <Button
                 variant="outline"

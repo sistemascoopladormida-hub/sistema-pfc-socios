@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { requiereCoberturaPropia } from "@/lib/pfc-rules";
 import { buildA4TablePdf, downloadPdf, printPdf } from "@/lib/pdf-export";
 import { canAccessModule, useUser } from "@/lib/user-context";
 
@@ -28,8 +29,9 @@ type SocioListadoRow = {
   FECHA_NACIMIENTO?: string;
   EDAD?: number | null;
   ES_HIJO?: boolean;
-  ES_HIJO_MAYOR_18?: boolean;
   REQUIERE_CUOTA_PROPIA?: boolean;
+  COMPARTE_COBERTURA?: boolean;
+  ESTADO_BENEFICIO?: "COBERTURA_FAMILIAR" | "CUOTA_PROPIA_REQUERIDA" | string;
   TIPO_BENEFICIO?: "PROPIO" | "TITULAR" | "NO_DEFINIDO" | string;
 };
 
@@ -39,16 +41,17 @@ type ApiResponse = {
   resumen?: {
     total_resultados: number;
     titulares_total: number;
-    hijos_mayores_18: number;
     hijos_menores_18: number;
     conyuges_total: number;
     otros_total: number;
+    beneficiarios_cobertura_propia: number;
   };
   error?: string;
 };
 
 const SOCIOS_PAGE_LIMIT = 500;
-type SocioCardFilter = "TODOS" | "HIJOS_MAYORES" | "HIJOS_MENORES" | "CONYUGES" | "OTROS" | "TITULARES";
+type SocioCardFilter = "TODOS" | "HIJOS_MENORES" | "CONYUGES" | "OTROS" | "TITULARES";
+type CoberturaQuickFilter = "TODOS" | "COBERTURA_FAMILIAR" | "REQUIERE_REGULARIZACION";
 
 function normalizeVinculo(value: string | null | undefined) {
   return String(value ?? "")
@@ -66,10 +69,32 @@ function isOtrosVinculo(vinculoNormalizado: string) {
   return vinculoNormalizado === "OTROS" || vinculoNormalizado === "OTRO" || vinculoNormalizado.startsWith("OTR");
 }
 
-function getBeneficioLabel(row: SocioListadoRow) {
-  if (row.ES_HIJO_MAYOR_18 || row.TIPO_BENEFICIO === "PROPIO") return "Beneficio propio";
-  if (row.TIPO_BENEFICIO === "TITULAR") return "Beneficio titular";
-  return "Por definir";
+function personaRequiereCoberturaPropia(row: SocioListadoRow) {
+  if (row.REQUIERE_CUOTA_PROPIA !== undefined) return Boolean(row.REQUIERE_CUOTA_PROPIA);
+  return requiereCoberturaPropia({
+    VINCULO: row.VINCULO,
+    FECHA_NACIMIENTO: row.FECHA_NACIMIENTO,
+    EDAD: row.EDAD,
+  });
+}
+
+function getEstadoCoberturaLabel(row: SocioListadoRow) {
+  if (personaRequiereCoberturaPropia(row)) {
+    return "Requiere Regularización";
+  }
+  return "Cobertura Familiar";
+}
+
+function getEstadoCoberturaBadgeKind(row: SocioListadoRow): "cobertura-familiar" | "cobertura-regularizar" {
+  if (personaRequiereCoberturaPropia(row)) {
+    return "cobertura-regularizar";
+  }
+  return "cobertura-familiar";
+}
+
+function resolveSegmentoParam(cardFilter: SocioCardFilter, coberturaFilter: CoberturaQuickFilter) {
+  if (coberturaFilter !== "TODOS") return coberturaFilter;
+  return cardFilterToSegmento(cardFilter);
 }
 
 function ActionTooltip({ label }: { label: string }) {
@@ -94,10 +119,10 @@ export function SociosPageClient() {
   const [resumenApi, setResumenApi] = useState<{
     total_resultados: number;
     titulares_total: number;
-    hijos_mayores_18: number;
     hijos_menores_18: number;
     conyuges_total: number;
     otros_total: number;
+    beneficiarios_cobertura_propia: number;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -109,6 +134,7 @@ export function SociosPageClient() {
   const [grupoRows, setGrupoRows] = useState<SocioListadoRow[]>([]);
   const [grupoCodSoc, setGrupoCodSoc] = useState<string>("");
   const [cardFilter, setCardFilter] = useState<SocioCardFilter>("TODOS");
+  const [coberturaFilter, setCoberturaFilter] = useState<CoberturaQuickFilter>("TODOS");
   const [edadCeroOnly, setEdadCeroOnly] = useState(false);
 
   useEffect(() => {
@@ -117,9 +143,14 @@ export function SociosPageClient() {
   }, [query]);
 
   useEffect(() => {
-    const foco = String(searchParams.get("foco") ?? "").toLowerCase();
-    if (foco === "hijos-mayores") {
-      setCardFilter("HIJOS_MAYORES");
+    const segmento = String(searchParams.get("segmento") ?? "").toUpperCase();
+    if (segmento === "REQUIERE_REGULARIZACION") {
+      setCoberturaFilter("REQUIERE_REGULARIZACION");
+      setCardFilter("TODOS");
+    }
+    if (segmento === "COBERTURA_FAMILIAR") {
+      setCoberturaFilter("COBERTURA_FAMILIAR");
+      setCardFilter("TODOS");
     }
   }, [searchParams]);
 
@@ -134,7 +165,7 @@ export function SociosPageClient() {
         setLoadError(null);
 
         const response = await fetch(
-          `/api/socios?buscar=${encodeURIComponent(debouncedQuery)}&limit=${SOCIOS_PAGE_LIMIT}&segmento=${encodeURIComponent(cardFilterToSegmento(cardFilter))}`,
+          `/api/socios?buscar=${encodeURIComponent(debouncedQuery)}&limit=${SOCIOS_PAGE_LIMIT}&segmento=${encodeURIComponent(resolveSegmentoParam(cardFilter, coberturaFilter))}`,
           { method: "GET", signal: abortController.signal, cache: "no-store" }
         );
         const data = (await response.json()) as ApiResponse;
@@ -155,24 +186,23 @@ export function SociosPageClient() {
 
     loadSocios();
     return () => abortController.abort();
-  }, [debouncedQuery, cardFilter]);
+  }, [debouncedQuery, cardFilter, coberturaFilter]);
 
   const resumenBeneficios = useMemo(
     () =>
       socios.reduce(
         (acc, row) => {
-          const esHijoMayor18 = Boolean(row.ES_HIJO_MAYOR_18);
           const esHijo = Boolean(row.ES_HIJO);
           const vinculoNormalizado = normalizeVinculo(row.VINCULO);
+          const edad = Number(row.EDAD);
 
-          if (esHijoMayor18) acc.hijosMayores18 += 1;
-          else if (esHijo) acc.hijosMenores18 += 1;
+          if (esHijo && (!Number.isFinite(edad) || edad < 18)) acc.hijosMenores18 += 1;
           if (isConyugeVinculo(vinculoNormalizado)) acc.conyuges += 1;
           if (isOtrosVinculo(vinculoNormalizado)) acc.otros += 1;
           if (vinculoNormalizado === "TITULAR") acc.beneficioTitular += 1;
           return acc;
         },
-        { hijosMayores18: 0, hijosMenores18: 0, conyuges: 0, otros: 0, beneficioTitular: 0 }
+        { hijosMenores18: 0, conyuges: 0, otros: 0, beneficioTitular: 0 }
       ),
     [socios]
   );
@@ -180,11 +210,10 @@ export function SociosPageClient() {
   const sociosFiltrados = useMemo(() => {
     const segmentados = cardFilter === "TODOS" ? socios : socios.filter((row) => {
       const vinculoNormalizado = normalizeVinculo(row.VINCULO);
-      const esHijoMayor18 = Boolean(row.ES_HIJO_MAYOR_18);
       const esHijo = Boolean(row.ES_HIJO);
-      const esHijoMenor18 = esHijo && !esHijoMayor18;
+      const edad = Number(row.EDAD);
+      const esHijoMenor18 = esHijo && (!Number.isFinite(edad) || edad < 18);
 
-      if (cardFilter === "HIJOS_MAYORES") return esHijoMayor18;
       if (cardFilter === "HIJOS_MENORES") return esHijoMenor18;
       if (cardFilter === "CONYUGES") return isConyugeVinculo(vinculoNormalizado);
       if (cardFilter === "OTROS") return isOtrosVinculo(vinculoNormalizado);
@@ -196,11 +225,6 @@ export function SociosPageClient() {
   }, [socios, cardFilter, edadCeroOnly]);
 
   const summaryCards = [
-    {
-      key: "HIJOS_MAYORES" as const,
-      label: "Hijo/a +18",
-      value: resumenApi?.hijos_mayores_18 ?? resumenBeneficios.hijosMayores18,
-    },
     {
       key: "HIJOS_MENORES" as const,
       label: "Hijo/a menor de 18",
@@ -225,6 +249,14 @@ export function SociosPageClient() {
 
   function toggleCardFilter(nextFilter: SocioCardFilter) {
     setCardFilter((prev) => (prev === nextFilter ? "TODOS" : nextFilter));
+    setCoberturaFilter("TODOS");
+    setQuery("");
+    setDebouncedQuery("");
+  }
+
+  function setCoberturaQuickFilter(nextFilter: CoberturaQuickFilter) {
+    setCoberturaFilter(nextFilter);
+    setCardFilter("TODOS");
     setQuery("");
     setDebouncedQuery("");
   }
@@ -238,6 +270,7 @@ export function SociosPageClient() {
     const subtitulo = [
       `Busqueda: ${debouncedQuery || "sin texto"}`,
       `Segmento: ${cardFilter === "TODOS" ? "todos" : segmentoActivo.toLowerCase()}`,
+      `Cobertura: ${coberturaFilter === "TODOS" ? "todos" : coberturaFilter.replaceAll("_", " ").toLowerCase()}`,
       `Edad 0: ${edadCeroOnly ? "si" : "no"}`,
       `Resultados: ${sociosFiltrados.length}`,
     ].join(" | ");
@@ -253,7 +286,7 @@ export function SociosPageClient() {
           { header: "Edad", key: "edad" },
           { header: "DNI", key: "dni" },
           { header: "Categoria", key: "categoria" },
-          { header: "Beneficio", key: "beneficio" },
+          { header: "Estado cobertura", key: "estadoCobertura" },
         ],
         rows: sociosFiltrados.map((row) => ({
           socio: String(row.COD_SOC ?? ""),
@@ -262,7 +295,7 @@ export function SociosPageClient() {
           edad: Number.isFinite(Number(row.EDAD)) ? `${Number(row.EDAD)}` : "Sin dato",
           dni: row.DNI_ADHERENTE || "No registrado",
           categoria: row.DES_CAT || "No registrado",
-          beneficio: getBeneficioLabel(row),
+          estadoCobertura: getEstadoCoberturaLabel(row),
         })),
       });
 
@@ -404,6 +437,17 @@ export function SociosPageClient() {
               Actualizando listado...
             </div>
           ) : null}
+          {coberturaFilter !== "TODOS" ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              <span>
+                Filtro cobertura:{" "}
+                {coberturaFilter === "COBERTURA_FAMILIAR" ? "cobertura familiar" : "requiere regularización"}
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setCoberturaQuickFilter("TODOS")}>
+                Quitar filtro
+              </Button>
+            </div>
+          ) : null}
           {cardFilter !== "TODOS" ? (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
               <span>
@@ -415,6 +459,35 @@ export function SociosPageClient() {
               </Button>
             </div>
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cobertura:</span>
+            <Button
+              size="sm"
+              variant={coberturaFilter === "TODOS" ? "default" : "outline"}
+              onClick={() => setCoberturaQuickFilter("TODOS")}
+            >
+              Todos
+            </Button>
+            <Button
+              size="sm"
+              variant={coberturaFilter === "COBERTURA_FAMILIAR" ? "default" : "outline"}
+              onClick={() => setCoberturaQuickFilter("COBERTURA_FAMILIAR")}
+            >
+              Cobertura Familiar
+            </Button>
+            <Button
+              size="sm"
+              variant={coberturaFilter === "REQUIERE_REGULARIZACION" ? "default" : "outline"}
+              onClick={() => setCoberturaQuickFilter("REQUIERE_REGULARIZACION")}
+            >
+              Requiere Regularización
+              {(resumenApi?.beneficiarios_cobertura_propia ?? 0) > 0 ? (
+                <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px]">
+                  {resumenApi?.beneficiarios_cobertura_propia}
+                </span>
+              ) : null}
+            </Button>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
@@ -447,15 +520,27 @@ export function SociosPageClient() {
                       <TableHead>Edad</TableHead>
                       <TableHead>DNI</TableHead>
                       <TableHead>Categoria</TableHead>
-                      <TableHead>Beneficio</TableHead>
+                      <TableHead>Estado cobertura</TableHead>
                       <TableHead>Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sociosFiltrados.map((socio) => (
-                      <TableRow key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`}>
+                      <TableRow
+                        key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`}
+                        className={personaRequiereCoberturaPropia(socio) ? "bg-amber-400/5" : undefined}
+                      >
                         <TableCell>{socio.COD_SOC || "No registrado"}</TableCell>
-                        <TableCell className="font-medium text-foreground">{socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "No registrado"}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">{socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "No registrado"}</p>
+                            {personaRequiereCoberturaPropia(socio) ? (
+                              <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                                Mayor de 18 años. Debe contar con cobertura propia.
+                              </p>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell>{socio.VINCULO || "No registrado"}</TableCell>
                         <TableCell>{Number.isFinite(Number(socio.EDAD)) ? `${Number(socio.EDAD)} anos` : "Sin dato"}</TableCell>
                         <TableCell>{socio.DNI_ADHERENTE || "No registrado"}</TableCell>
@@ -469,8 +554,8 @@ export function SociosPageClient() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <DataBadge kind={socio.ES_HIJO_MAYOR_18 || socio.TIPO_BENEFICIO === "PROPIO" ? "beneficio-propio" : "beneficio-titular"}>
-                            {getBeneficioLabel(socio)}
+                          <DataBadge kind={getEstadoCoberturaBadgeKind(socio)}>
+                            {getEstadoCoberturaLabel(socio)}
                           </DataBadge>
                         </TableCell>
                         <TableCell>
@@ -512,12 +597,20 @@ export function SociosPageClient() {
 
               <div className="space-y-3 min-[1400px]:hidden">
                 {sociosFiltrados.map((socio) => (
-                  <div key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`} className="data-card space-y-4">
+                  <div
+                    key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`}
+                    className={`data-card space-y-4 ${personaRequiereCoberturaPropia(socio) ? "border-amber-300/25 bg-amber-400/5" : ""}`}
+                  >
                     <div className="space-y-1">
                       <p className="text-base font-semibold text-foreground">{socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "No registrado"}</p>
                       <p className="text-sm text-slate-500 dark:text-slate-400">
                         Socio {socio.COD_SOC} · {socio.VINCULO || "Sin vinculo"}
                       </p>
+                      {personaRequiereCoberturaPropia(socio) ? (
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                          Mayor de 18 años. Debe contar con cobertura propia.
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -542,10 +635,10 @@ export function SociosPageClient() {
                         </div>
                       </div>
                       <div>
-                        <p className="field-help">Beneficio</p>
+                        <p className="field-help">Estado cobertura</p>
                         <div className="pt-1">
-                          <DataBadge kind={socio.ES_HIJO_MAYOR_18 || socio.TIPO_BENEFICIO === "PROPIO" ? "beneficio-propio" : "beneficio-titular"}>
-                            {getBeneficioLabel(socio)}
+                          <DataBadge kind={getEstadoCoberturaBadgeKind(socio)}>
+                            {getEstadoCoberturaLabel(socio)}
                           </DataBadge>
                         </div>
                       </div>
@@ -616,8 +709,8 @@ export function SociosPageClient() {
                     <p><span className="font-medium text-foreground">DNI:</span> {item.DNI_ADHERENTE || "No registrado"}</p>
                     <p><span className="font-medium text-foreground">Categoria:</span> {item.DES_CAT || "No registrado"}</p>
                     <div className="pt-1">
-                      <DataBadge kind={item.ES_HIJO_MAYOR_18 || item.TIPO_BENEFICIO === "PROPIO" ? "beneficio-propio" : "beneficio-titular"}>
-                        {getBeneficioLabel(item)}
+                      <DataBadge kind={getEstadoCoberturaBadgeKind(item)}>
+                        {getEstadoCoberturaLabel(item)}
                       </DataBadge>
                     </div>
                     <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row">

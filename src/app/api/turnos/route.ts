@@ -1,8 +1,9 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { resolverBeneficio } from "@/lib/adherentes-beneficios";
+import { calcularEdad, resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { etiquetaMesAnioTurnoEs } from "@/lib/fecha-turno";
+import { requiereCoberturaPropia } from "@/lib/pfc-rules";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type CrearTurnoBody = {
@@ -494,7 +495,12 @@ export async function POST(request: Request) {
     const grupoRows = grupoResult.recordset as SocioBeneficioRow[];
     const adherentesConBeneficioTitular = grupoRows
       .filter(
-        (row) => resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO) === "TITULAR"
+        (row) =>
+          !requiereCoberturaPropia({
+            VINCULO: row.VINCULO,
+            FECHA_NACIMIENTO: row.FECHA_NACIMIENTO,
+            EDAD: calcularEdad(row.FECHA_NACIMIENTO),
+          })
       )
       .map((row) => Number(row.ADHERENTE_CODIGO))
       .filter((value) => Number.isInteger(value) && value >= 0);

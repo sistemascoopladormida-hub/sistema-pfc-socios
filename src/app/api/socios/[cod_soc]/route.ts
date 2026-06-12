@@ -1,7 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { calcularEdad, esVinculoHijo, resolverBeneficio } from "@/lib/adherentes-beneficios";
+import { enriquecerSocioConCobertura } from "@/lib/pfc-rules";
 import { getSqlConnection } from "@/lib/sqlserver";
 
 type Params = {
@@ -61,19 +61,7 @@ export async function GET(_: Request, { params }: Params) {
         ADHERENTE_NOMBRE
     `);
 
-    const data = (result.recordset as SocioGrupoRow[]).map((row) => {
-      const edad = calcularEdad(row.FECHA_NACIMIENTO);
-      const esHijo = esVinculoHijo(row.VINCULO);
-      const beneficio = resolverBeneficio(row.VINCULO, row.FECHA_NACIMIENTO);
-      return {
-        ...row,
-        EDAD: edad,
-        ES_HIJO: esHijo,
-        ES_HIJO_MAYOR_18: esHijo && Number(edad) >= 18,
-        REQUIERE_CUOTA_PROPIA: beneficio === "PROPIO",
-        TIPO_BENEFICIO: beneficio,
-      };
-    });
+    const data = (result.recordset as SocioGrupoRow[]).map((row) => enriquecerSocioConCobertura(row));
 
     grupoCache.set(codSoc, {
       expiresAt: now + SOCIO_GRUPO_CACHE_TTL_MS,

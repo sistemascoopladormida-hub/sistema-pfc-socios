@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { calcularEdad, esVinculoHijo } from "@/lib/adherentes-beneficios";
+import { calcularEdad } from "@/lib/adherentes-beneficios";
+import { requiereCoberturaPropia } from "@/lib/pfc-rules";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type TotalRow = {
@@ -242,12 +243,7 @@ export async function GET() {
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "");
         const esTitular = vinculoNormalizado === "TITULAR";
-        const esConyuge = vinculoNormalizado === "CONYUGE";
-        const esOtros = vinculoNormalizado === "OTROS" || vinculoNormalizado === "OTRO";
-        const esHijo = esVinculoHijo(row.VINCULO);
         const edad = calcularEdad(row.FECHA_NACIMIENTO);
-        const esHijoMayor18 = esHijo && edad !== null && edad >= 18;
-        const esHijoMenor18 = esHijo && !esHijoMayor18;
 
         acc.personasCubiertas += 1;
         if (esTitular) {
@@ -255,13 +251,23 @@ export async function GET() {
         } else {
           acc.sociosAdherentes += 1;
         }
-        if (esHijoMayor18) {
-          acc.hijosMayores18 += 1;
+        if (
+          requiereCoberturaPropia({
+            VINCULO: row.VINCULO,
+            FECHA_NACIMIENTO: row.FECHA_NACIMIENTO,
+            EDAD: edad,
+          })
+        ) {
+          acc.beneficiariosCoberturaPropia += 1;
         }
-        if (esHijoMenor18) {
-          acc.hijosMenores18 += 1;
-        }
-        if (esConyuge || esOtros || esHijoMenor18) {
+        if (
+          !requiereCoberturaPropia({
+            VINCULO: row.VINCULO,
+            FECHA_NACIMIENTO: row.FECHA_NACIMIENTO,
+            EDAD: edad,
+          }) &&
+          !esTitular
+        ) {
           acc.adherentesBeneficioTitular += 1;
         }
         return acc;
@@ -270,18 +276,16 @@ export async function GET() {
         personasCubiertas: 0,
         sociosTitulares: 0,
         sociosAdherentes: 0,
-        hijosMayores18: 0,
-        hijosMenores18: 0,
         adherentesBeneficioTitular: 0,
+        beneficiariosCoberturaPropia: 0,
       }
     );
 
     const personasCubiertas = resumenSocios.personasCubiertas;
     const sociosTitulares = resumenSocios.sociosTitulares;
     const sociosAdherentes = resumenSocios.sociosAdherentes;
-    const hijosMayores18 = resumenSocios.hijosMayores18;
-    const hijosMenores18 = resumenSocios.hijosMenores18;
     const adherentesBeneficioTitular = resumenSocios.adherentesBeneficioTitular;
+    const beneficiariosCoberturaPropia = resumenSocios.beneficiariosCoberturaPropia;
     const turnosHoy = toNumber((turnosAnioResult.recordset[0] as TotalRow | undefined)?.total);
     const profesionalesActivos = toNumber(
       (profesionalesActivosResult.recordset[0] as TotalRow | undefined)?.total
@@ -382,9 +386,12 @@ export async function GET() {
         personas_cubiertas: personasCubiertas,
         socios_titulares: sociosTitulares,
         socios_adherentes: sociosAdherentes,
-        hijos_mayores_18: hijosMayores18,
-        hijos_menores_18: hijosMenores18,
         adherentes_beneficio_titular: adherentesBeneficioTitular,
+        beneficiarios_cobertura_propia: beneficiariosCoberturaPropia,
+        alertas: {
+          turnos_vencidos: turnosReservadosVencidos,
+          beneficiarios_cobertura_propia: beneficiariosCoberturaPropia,
+        },
         turnos_hoy: turnosHoy,
         profesionales_activos: profesionalesActivos,
         prestaciones_mes: prestacionesMes,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Edit3, PlusCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,63 +12,23 @@ import { Loading } from "@/components/ui/loading";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canAccessModule, useUser } from "@/lib/user-context";
+import { OrtopediaAsignacionSection } from "@/modules/ortopedia/ortopedia-asignacion-section";
+import { OrtopediaPrestamosSection } from "@/modules/ortopedia/ortopedia-prestamos-section";
+import { CERTIFICADO_ACCEPT } from "@/modules/ortopedia/prestamo-utils";
+import type { Elemento, PrestamoExpediente } from "@/modules/ortopedia/types";
 
 type OrtopediaSection = "gestion" | "asignacion" | "stock" | "prestamos";
-
-type Elemento = {
-  id: number;
-  nombre: string;
-  descripcion: string;
-  stock_total: number;
-  stock_disponible: number;
-  activo: boolean;
-};
-
-type Prestamo = {
-  id: number;
-  elemento_id: number;
-  elemento_nombre: string;
-  cod_soc: number;
-  adherente_codigo: number;
-  paciente_nombre: string;
-  fecha_prestamo: string;
-  fecha_vencimiento: string;
-  fecha_devolucion: string | null;
-  estado: "ACTIVO" | "VENCIDO" | "DEVUELTO" | string;
-  observaciones: string;
-  certificado_presentado: boolean;
-  renovaciones: number;
-  certificado_ruta?: string | null;
-  certificado_nombre?: string | null;
-};
-
-type SocioSearchRow = {
-  COD_SOC: number | string;
-  ADHERENTE_CODIGO: number | string;
-  ADHERENTE_NOMBRE: string;
-  APELLIDOS: string;
-  VINCULO: string;
-  DNI_ADHERENTE: string;
-  DES_CAT: string;
-};
 
 type ApiResponse = {
   success: boolean;
   data?: {
     elementos: Elemento[];
-    prestamos: Prestamo[];
+    prestamos: PrestamoExpediente[];
   };
   error?: string;
 };
 
 type ElementoModalMode = "create" | "edit";
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleDateString("es-AR", { timeZone: "UTC" });
-}
 
 const sectionToModule = {
   gestion: "ortopedia-gestion",
@@ -87,8 +47,9 @@ const sectionTitles: Record<OrtopediaSection, string> = {
 export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) {
   const { role } = useUser();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [elementos, setElementos] = useState<Elemento[]>([]);
-  const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
+  const [prestamos, setPrestamos] = useState<PrestamoExpediente[]>([]);
 
   const [elementoModalOpen, setElementoModalOpen] = useState(false);
   const [elementoModalMode, setElementoModalMode] = useState<ElementoModalMode>("create");
@@ -99,26 +60,14 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
   const [elementoActivo, setElementoActivo] = useState(true);
   const [guardandoElemento, setGuardandoElemento] = useState(false);
 
-  const [socioQuery, setSocioQuery] = useState("");
-  const [socioResults, setSocioResults] = useState<SocioSearchRow[]>([]);
-  const [showSocioResults, setShowSocioResults] = useState(false);
-  const [searchingSocios, setSearchingSocios] = useState(false);
-  const [selectedSocio, setSelectedSocio] = useState<SocioSearchRow | null>(null);
-  const [selectedElementoId, setSelectedElementoId] = useState("");
-  const [prestamoObs, setPrestamoObs] = useState("");
   const [renovarDialogOpen, setRenovarDialogOpen] = useState(false);
   const [renovarPrestamoId, setRenovarPrestamoId] = useState<number | null>(null);
   const [renovarObs, setRenovarObs] = useState("");
   const [certificadoFile, setCertificadoFile] = useState<File | null>(null);
   const [renovando, setRenovando] = useState(false);
-  const socioSearchRef = useRef<HTMLDivElement | null>(null);
 
-  const elementosDisponibles = useMemo(
-    () => elementos.filter((item) => item.activo && Number(item.stock_disponible) > 0),
-    [elementos]
-  );
-
-  async function fetchData() {
+  async function fetchData(options?: { silent?: boolean }) {
+    if (!options?.silent) setRefreshing(true);
     const response = await fetch("/api/ortopedia", { cache: "no-store" });
     const data = (await response.json()) as ApiResponse;
     if (!response.ok || !data.success || !data.data) {
@@ -126,54 +75,16 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
     }
     setElementos(data.data.elementos ?? []);
     setPrestamos(data.data.prestamos ?? []);
+    if (!options?.silent) setRefreshing(false);
   }
 
   useEffect(() => {
-    fetchData()
+    fetchData({ silent: true })
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : "No se pudo cargar ortopedia");
       })
       .finally(() => setLoading(false));
   }, []);
-
-  useEffect(() => {
-    if (!showSocioResults || section !== "asignacion") return;
-
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (socioSearchRef.current?.contains(target)) return;
-      setShowSocioResults(false);
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [section, showSocioResults]);
-
-  useEffect(() => {
-    if (!showSocioResults || section !== "asignacion") return;
-    const q = socioQuery.trim();
-    if (q.length < 2) {
-      setSocioResults([]);
-      return;
-    }
-
-    const timer = window.setTimeout(async () => {
-      try {
-        setSearchingSocios(true);
-        const response = await fetch(`/api/socios?buscar=${encodeURIComponent(q)}&limit=40`, { cache: "no-store" });
-        const data = (await response.json()) as { success: boolean; data?: SocioSearchRow[]; error?: string };
-        if (!response.ok || !data.success) throw new Error(data.error ?? "No se pudieron buscar socios");
-        setSocioResults(data.data ?? []);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Error buscando socios");
-      } finally {
-        setSearchingSocios(false);
-      }
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [section, socioQuery, showSocioResults]);
 
   function abrirModalCrearElemento() {
     setElementoModalMode("create");
@@ -244,41 +155,6 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       return;
     }
     toast.success(data.message ?? "Elemento eliminado");
-    await fetchData();
-  }
-
-  async function handleRegistrarPrestamo() {
-    if (!selectedSocio) {
-      toast.error("Selecciona socio o adherente");
-      return;
-    }
-    const elementoId = Number(selectedElementoId);
-    if (!Number.isInteger(elementoId) || elementoId <= 0) {
-      toast.error("Selecciona un elemento");
-      return;
-    }
-
-    const response = await fetch("/api/ortopedia/prestamos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        elemento_id: elementoId,
-        cod_soc: Number(selectedSocio.COD_SOC),
-        adherente_codigo: Number(selectedSocio.ADHERENTE_CODIGO),
-        paciente_nombre: selectedSocio.ADHERENTE_NOMBRE || selectedSocio.APELLIDOS,
-        observaciones: prestamoObs,
-      }),
-    });
-
-    const data = (await response.json()) as { success: boolean; error?: string; message?: string };
-    if (!response.ok || !data.success) {
-      toast.error(data.error ?? "No se pudo registrar prestamo");
-      return;
-    }
-
-    toast.success(data.message ?? "Prestamo registrado");
-    setSelectedElementoId("");
-    setPrestamoObs("");
     await fetchData();
   }
 
@@ -442,83 +318,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       ) : null}
 
       {section === "asignacion" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Asignar prestamo</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div ref={socioSearchRef} className="relative">
-              <input
-                value={socioQuery}
-                onFocus={() => setShowSocioResults(true)}
-                onChange={(e) => {
-                  setSocioQuery(e.target.value);
-                  setShowSocioResults(true);
-                  setSelectedSocio(null);
-                }}
-                placeholder="Buscar socio o adherente"
-                className="h-11 w-full rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
-              />
-              {showSocioResults ? (
-                <div className="absolute z-20 mt-2 max-h-56 w-full overflow-auto rounded-2xl border border-border bg-popover shadow-lg">
-                  {searchingSocios ? (
-                    <p className="px-4 py-3 text-sm text-slate-500">Buscando socios...</p>
-                  ) : socioResults.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-slate-500">Sin resultados</p>
-                  ) : (
-                    socioResults.map((row) => (
-                      <button
-                        type="button"
-                        key={`${row.COD_SOC}-${row.ADHERENTE_CODIGO}-${row.DNI_ADHERENTE}`}
-                        className="w-full border-b border-border px-4 py-3 text-left hover:bg-muted"
-                        onClick={() => {
-                          setSelectedSocio(row);
-                          setSocioQuery(`${row.COD_SOC} - ${row.ADHERENTE_NOMBRE || row.APELLIDOS} (${row.VINCULO || "-"})`);
-                          setShowSocioResults(false);
-                        }}
-                      >
-                        <div className="font-medium text-foreground">{row.ADHERENTE_NOMBRE || row.APELLIDOS}</div>
-                        <div className="text-xs text-slate-500">Socio {row.COD_SOC} · DNI {row.DNI_ADHERENTE || "-"}</div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="field-grid field-grid-2">
-              <label className="grid gap-2">
-                <span className="field-label">Elemento</span>
-                <select
-                  value={selectedElementoId}
-                  onChange={(e) => setSelectedElementoId(e.target.value)}
-                  className="h-11 rounded-2xl border border-border bg-input px-3 text-sm text-foreground outline-none"
-                >
-                  <option value="">Seleccionar elemento disponible</option>
-                  {elementosDisponibles.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.nombre} (disp: {item.stock_disponible}/{item.stock_total})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-2">
-                <span className="field-label">Observaciones</span>
-                <input
-                  value={prestamoObs}
-                  onChange={(e) => setPrestamoObs(e.target.value)}
-                  placeholder="Opcional"
-                  className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground outline-none"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end">
-              <Button onClick={handleRegistrarPrestamo}>Registrar prestamo</Button>
-            </div>
-          </CardContent>
-        </Card>
+        <OrtopediaAsignacionSection elementos={elementos} onRegistered={() => fetchData()} />
       ) : null}
 
       {section === "stock" ? (
@@ -553,63 +353,13 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
       ) : null}
 
       {section === "prestamos" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Prestamos de elementos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {prestamos.length === 0 ? (
-              <EmptyState message="No hay prestamos registrados." />
-            ) : (
-              <div className="space-y-3">
-                {prestamos.map((item) => (
-                  <div key={item.id} className="data-card space-y-4">
-                    <div className="space-y-1">
-                      <p className="text-base font-semibold text-foreground">{item.paciente_nombre}</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {item.elemento_nombre} · Socio {item.cod_soc} · Adherente {item.adherente_codigo}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div><p className="field-help">Prestamo</p><p className="field-label">{formatDate(item.fecha_prestamo)}</p></div>
-                      <div><p className="field-help">Vencimiento</p><p className="field-label">{formatDate(item.fecha_vencimiento)}</p></div>
-                      <div><p className="field-help">Estado</p><p className="field-label">{item.estado}</p></div>
-                      <div><p className="field-help">Renovaciones</p><p className="field-label">{item.renovaciones}</p></div>
-                    </div>
-
-                    <div className="flex flex-col gap-2 lg:flex-row">
-                      {item.certificado_ruta ? (
-                        <a
-                          href={`/api/ortopedia/prestamos/${item.id}/certificado`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex h-11 items-center justify-center rounded-2xl border border-border px-4 text-sm font-medium text-foreground hover:bg-muted"
-                        >
-                          Ver certificado
-                        </a>
-                      ) : (
-                        <div className="inline-flex h-11 items-center rounded-2xl border border-border px-4 text-sm text-slate-500">
-                          Sin certificado
-                        </div>
-                      )}
-
-                      {(item.estado === "ACTIVO" || item.estado === "VENCIDO") ? (
-                        <>
-                          <Button variant="outline" onClick={() => abrirRenovacion(item.id)}>
-                            Renovar 60 dias
-                          </Button>
-                          <Button variant="outline" onClick={() => handleDevolver(item.id)}>
-                            Devolver
-                          </Button>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <OrtopediaPrestamosSection
+          prestamos={prestamos}
+          loading={refreshing}
+          onRefresh={() => fetchData()}
+          onRenovar={abrirRenovacion}
+          onDevolver={handleDevolver}
+        />
       ) : null}
 
       <Dialog
@@ -694,7 +444,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
               <span className="field-label">Certificado medico</span>
               <input
                 type="file"
-                accept="image/*"
+                accept={CERTIFICADO_ACCEPT}
                 onChange={(e) => setCertificadoFile(e.target.files?.[0] ?? null)}
                 className="h-11 rounded-2xl border border-border bg-input px-4 text-sm text-foreground"
                 disabled={renovando}

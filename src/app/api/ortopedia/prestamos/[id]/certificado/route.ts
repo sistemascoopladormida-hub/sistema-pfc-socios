@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 
+import { certificadoMimeFromPath, resolveUploadAbsolutePath } from "@/lib/ortopedia-certificado";
 import { getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type Params = {
@@ -24,6 +25,32 @@ export async function GET(_: Request, { params }: Params) {
 
   try {
     const pool = await getSqlConnectionPfc();
+
+    const prestamoResult = await pool.request().input("prestamo_id", sql.Int, prestamoId).query(`
+      SELECT TOP 1 certificado_url
+      FROM ortopedia_prestamos
+      WHERE id = @prestamo_id
+    `);
+    const prestamoRow = prestamoResult.recordset[0] as { certificado_url: string | null } | undefined;
+
+    if (prestamoRow?.certificado_url) {
+      const urlPath = prestamoRow.certificado_url;
+      if (urlPath.startsWith("/api/ortopedia/files/")) {
+        const fileName = decodeURIComponent(urlPath.replace("/api/ortopedia/files/", ""));
+        const storedPath = path.join("uploads", "ortopedia", path.basename(fileName)).replace(/\\/g, "/");
+        const absFile = resolveUploadAbsolutePath(storedPath);
+        const fileBuffer = await readFile(absFile);
+        const mime = certificadoMimeFromPath(fileName);
+        return new NextResponse(fileBuffer, {
+          headers: {
+            "Content-Type": mime,
+            "Content-Disposition": `inline; filename="${fileName}"`,
+            "Cache-Control": "private, max-age=0, must-revalidate",
+          },
+        });
+      }
+    }
+
     const result = await pool.request().input("prestamo_id", sql.Int, prestamoId).query(`
       SELECT TOP 1
         archivo_ruta,

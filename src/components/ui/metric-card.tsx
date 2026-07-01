@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { cn } from "@/lib/utils";
 
-type MetricCardTone = "teal" | "amber" | "red" | "slate";
+type MetricCardTone = "teal" | "amber" | "red" | "slate" | "orange" | "violet";
 
 type MetricCardProps = {
   label: string;
@@ -20,11 +20,13 @@ const toneStyles: Record<MetricCardTone, string> = {
   amber: "bg-amber-400/12 text-amber-700 ring-1 ring-amber-300/18 dark:text-amber-300",
   red: "bg-rose-400/12 text-rose-700 ring-1 ring-rose-300/18 dark:text-rose-300",
   slate: "bg-muted text-foreground ring-1 ring-border",
+  orange: "bg-orange-400/12 text-orange-700 ring-1 ring-orange-300/18 dark:text-orange-300",
+  violet: "bg-violet-400/12 text-violet-700 ring-1 ring-violet-300/18 dark:text-violet-300",
 };
 
 export function MetricCard({ label, value, description, icon: Icon, tone = "slate" }: MetricCardProps) {
   return (
-    <article className="rounded-[24px] border border-border bg-card p-5 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+    <article className="rounded-[24px] border border-border bg-card p-5 shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(15,23,42,0.12)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{label}</p>

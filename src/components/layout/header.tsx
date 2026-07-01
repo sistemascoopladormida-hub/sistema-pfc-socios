@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, LogOut, Menu, Plus, Settings, UserCircle2 } from "lucide-react";
 
+import { OrtopediaAlertsBell, OrtopediaAlertsPanel } from "@/components/layout/ortopedia-alerts-panel";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { navigationItems } from "@/components/layout/navigation-config";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useOrtopediaDashboard } from "@/hooks/use-ortopedia-dashboard";
+import { ROLES } from "@/lib/roles";
 import { roleLabel, simulatedUserByRole, useUser } from "@/lib/user-context";
 
 type HeaderProps = {
@@ -29,6 +32,7 @@ const pageTitles: Record<string, string> = {
   "/turnos": "Turnos",
   "/turnos/nuevo": "Crear turno",
   "/ortopedia": "Ortopedia",
+  "/ortopedia/dashboard": "Dashboard Ortopedia",
   "/ortopedia/gestion": "Gestión de elementos",
   "/ortopedia/asignacion": "Asignación de elementos",
   "/ortopedia/stock": "Stock",
@@ -45,6 +49,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   const pathname = usePathname();
   const { role } = useUser();
   const [elevated, setElevated] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const isOrtopediaAdmin = role === ROLES.ORTOPEDIA_ADMIN;
+  const { data, loading, alertCount } = useOrtopediaDashboard(isOrtopediaAdmin);
 
   const title =
     pageTitles[pathname] ??
@@ -76,6 +83,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   }
 
   return (
+    <>
     <header
       className={`glass-header sticky top-0 z-20 border-b border-border px-4 py-4 md:px-6 ${
         elevated ? "shadow-[0_10px_24px_rgba(2,6,23,0.24)]" : ""
@@ -109,12 +117,16 @@ export function Header({ onMenuClick }: HeaderProps) {
         <div className="flex flex-wrap items-center gap-2">
           <ThemeToggle />
 
-          <Link href="/turnos/nuevo">
-            <Button className="h-11 px-4">
-              <Plus className="mr-2 h-4 w-4" />
-              Crear turno
-            </Button>
-          </Link>
+          {isOrtopediaAdmin ? (
+            <OrtopediaAlertsBell count={alertCount} onClick={() => setAlertsOpen(true)} />
+          ) : (
+            <Link href="/turnos/nuevo">
+              <Button className="h-11 px-4">
+                <Plus className="mr-2 h-4 w-4" />
+                Crear turno
+              </Button>
+            </Link>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -150,5 +162,16 @@ export function Header({ onMenuClick }: HeaderProps) {
         </div>
       </div>
     </header>
+
+    {isOrtopediaAdmin ? (
+      <OrtopediaAlertsPanel
+        open={alertsOpen}
+        onOpenChange={setAlertsOpen}
+        alertas={data?.alertas ?? []}
+        loading={loading}
+        alertCount={alertCount}
+      />
+    ) : null}
+    </>
   );
 }

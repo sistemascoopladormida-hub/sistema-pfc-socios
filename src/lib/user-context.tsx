@@ -23,6 +23,7 @@ type AppModule =
   | "socios"
   | "turnos"
   | "ortopedia-gestion"
+  | "ortopedia-dashboard"
   | "ortopedia-asignacion"
   | "ortopedia-stock"
   | "ortopedia-prestamos"
@@ -86,6 +87,7 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "ortopedia-prestamos",
   ],
   ortopedia_admin: [
+    "ortopedia-dashboard",
     "ortopedia-gestion",
     "ortopedia-asignacion",
     "ortopedia-stock",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Edit3, PlusCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +47,9 @@ const sectionTitles: Record<OrtopediaSection, string> = {
 
 export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) {
   const { role } = useUser();
+  const searchParams = useSearchParams();
+  const initialPrestamoId = Number(searchParams.get("id") ?? 0);
+  const prestamoIdFromUrl = Number.isInteger(initialPrestamoId) && initialPrestamoId > 0 ? initialPrestamoId : null;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [elementos, setElementos] = useState<Elemento[]>([]);
@@ -356,6 +360,7 @@ export function OrtopediaModulePage({ section }: { section: OrtopediaSection }) 
         <OrtopediaPrestamosSection
           prestamos={prestamos}
           loading={refreshing}
+          initialPrestamoId={prestamoIdFromUrl}
           onRefresh={() => fetchData()}
           onRenovar={abrirRenovacion}
           onDevolver={handleDevolver}

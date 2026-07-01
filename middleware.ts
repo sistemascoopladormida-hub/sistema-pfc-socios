@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
 
   if (isPublicPath(pathname) && loggedIn) {
     const role = request.cookies.get("rol")?.value;
-    const destination = role === "ortopedia_admin" ? "/ortopedia" : "/dashboard";
+    const destination = role === "ortopedia_admin" ? "/ortopedia/dashboard" : "/dashboard";
     return NextResponse.redirect(new URL(destination, request.url));
   }
 

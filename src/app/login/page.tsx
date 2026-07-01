@@ -40,7 +40,7 @@ export default function LoginPage() {
       setUserRole(role);
       window.dispatchEvent(new Event("roles:changed"));
       toast.success(`Bienvenido/a ${usuario}`);
-      router.replace(role === ROLES.ORTOPEDIA_ADMIN ? "/ortopedia" : "/dashboard");
+      router.replace(role === ROLES.ORTOPEDIA_ADMIN ? "/ortopedia/dashboard" : "/dashboard");
       router.refresh();
     } finally {
       setSubmitting(false);

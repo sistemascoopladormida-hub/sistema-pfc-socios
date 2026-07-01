@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   CalendarClock,
   Edit3,
@@ -37,6 +37,7 @@ import type { PrestamoExpediente } from "@/modules/ortopedia/types";
 type Props = {
   prestamos: PrestamoExpediente[];
   loading?: boolean;
+  initialPrestamoId?: number | null;
   onRefresh: () => Promise<void>;
   onRenovar: (prestamoId: number) => void;
   onDevolver: (prestamoId: number) => Promise<void>;
@@ -200,7 +201,7 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
   );
 }
 
-export function OrtopediaPrestamosSection({ prestamos, loading, onRefresh, onRenovar, onDevolver }: Props) {
+export function OrtopediaPrestamosSection({ prestamos, loading, initialPrestamoId, onRefresh, onRenovar, onDevolver }: Props) {
   const [detalleOpen, setDetalleOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [selected, setSelected] = useState<PrestamoExpediente | null>(null);
@@ -212,6 +213,15 @@ export function OrtopediaPrestamosSection({ prestamos, loading, onRefresh, onRen
   const [editObservaciones, setEditObservaciones] = useState("");
   const [editCertificado, setEditCertificado] = useState<File | null>(null);
   const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (!initialPrestamoId || prestamos.length === 0) return;
+    const match = prestamos.find((item) => item.id === initialPrestamoId);
+    if (match) {
+      setSelected(match);
+      setDetalleOpen(true);
+    }
+  }, [initialPrestamoId, prestamos]);
 
   function abrirDetalle(prestamo: PrestamoExpediente) {
     setSelected(prestamo);

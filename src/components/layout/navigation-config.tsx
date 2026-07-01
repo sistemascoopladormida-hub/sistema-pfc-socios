@@ -19,6 +19,7 @@ type AppModule =
   | "socios"
   | "turnos"
   | "ortopedia-gestion"
+  | "ortopedia-dashboard"
   | "ortopedia-asignacion"
   | "ortopedia-stock"
   | "ortopedia-prestamos"
@@ -97,6 +98,15 @@ export const navigationItems: NavigationItem[] = [
     icon: HeartPulse,
     description: "Control de prestaciones, uso y cobertura.",
     group: "Operaciones",
+  },
+  {
+    label: "Dashboard",
+    href: "/ortopedia/dashboard",
+    module: "ortopedia-dashboard",
+    icon: LayoutDashboard,
+    description: "Panel operativo de prestamos, stock y alertas de ortopedia.",
+    shortLabel: "Inicio",
+    group: "Ortopedia",
   },
   {
     label: "Gestión de elementos",

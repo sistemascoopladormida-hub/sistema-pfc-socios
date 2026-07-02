@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useOrtopediaDashboard } from "@/hooks/use-ortopedia-dashboard";
-import { ROLES } from "@/lib/roles";
+import { canAccessOrtopediaDashboard, ROLES } from "@/lib/roles";
 import { roleLabel, simulatedUserByRole, useUser } from "@/lib/user-context";
 
 type HeaderProps = {
@@ -50,8 +50,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { role } = useUser();
   const [elevated, setElevated] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const isOrtopediaAdmin = role === ROLES.ORTOPEDIA_ADMIN;
-  const { data, loading, alertCount } = useOrtopediaDashboard(isOrtopediaAdmin);
+  const canUseOrtopediaAlerts = canAccessOrtopediaDashboard(role);
+  const isDeveloper = role === ROLES.DEVELOPER;
+  const { data, loading, alertCount } = useOrtopediaDashboard(canUseOrtopediaAlerts);
 
   const title =
     pageTitles[pathname] ??
@@ -117,16 +118,18 @@ export function Header({ onMenuClick }: HeaderProps) {
         <div className="flex flex-wrap items-center gap-2">
           <ThemeToggle />
 
-          {isOrtopediaAdmin ? (
+          {canUseOrtopediaAlerts ? (
             <OrtopediaAlertsBell count={alertCount} onClick={() => setAlertsOpen(true)} />
-          ) : (
+          ) : null}
+
+          {!canUseOrtopediaAlerts || isDeveloper ? (
             <Link href="/turnos/nuevo">
               <Button className="h-11 px-4">
                 <Plus className="mr-2 h-4 w-4" />
                 Crear turno
               </Button>
             </Link>
-          )}
+          ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -163,7 +166,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       </div>
     </header>
 
-    {isOrtopediaAdmin ? (
+    {canUseOrtopediaAlerts ? (
       <OrtopediaAlertsPanel
         open={alertsOpen}
         onOpenChange={setAlertsOpen}

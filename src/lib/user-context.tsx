@@ -81,6 +81,7 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "especialidades",
     "prestaciones",
     "reportes",
+    "ortopedia-dashboard",
     "ortopedia-gestion",
     "ortopedia-asignacion",
     "ortopedia-stock",

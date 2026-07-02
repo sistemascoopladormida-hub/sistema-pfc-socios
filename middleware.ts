@@ -9,7 +9,13 @@ function isPublicPath(pathname: string) {
 
 function hasValidRoleCookie(request: NextRequest) {
   const role = request.cookies.get("rol")?.value;
-  return role === "admin" || role === "directivo" || role === "ortopedia_admin";
+  return (
+    role === "admin" ||
+    role === "admin_vanesa" ||
+    role === "developer" ||
+    role === "directivo" ||
+    role === "ortopedia_admin"
+  );
 }
 
 export function middleware(request: NextRequest) {

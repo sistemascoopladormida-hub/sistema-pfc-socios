@@ -25,3 +25,7 @@ export const isAdmin = (rol: string | null | undefined) => rol === ROLES.ADMIN;
 export const isAdminVanesa = (rol: string | null | undefined) => rol === ROLES.ADMIN_VANESA;
 export const isDeveloper = (rol: string | null | undefined) => rol === ROLES.DEVELOPER;
 export const isOrtopediaAdmin = (rol: string | null | undefined) => rol === ROLES.ORTOPEDIA_ADMIN;
+
+export function canAccessOrtopediaDashboard(rol: string | null | undefined) {
+  return rol === ROLES.ORTOPEDIA_ADMIN || rol === ROLES.DEVELOPER;
+}

@@ -38,8 +38,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOrtopediaDashboard } from "@/hooks/use-ortopedia-dashboard";
 import { useMotionSettings } from "@/hooks/use-motion-settings";
-import { ROLES } from "@/lib/roles";
-import { useUser } from "@/lib/user-context";
+import { canAccessOrtopediaDashboard } from "@/lib/roles";
+import { canAccessModule, useUser } from "@/lib/user-context";
 
 const PIE_COLORS = ["#10b981", "#6366f1", "#ef4444", "#f59e0b"];
 
@@ -76,9 +76,10 @@ function actividadIcon(tipo: string) {
 export function OrtopediaDashboardPage() {
   const { role } = useUser();
   const { page, item } = useMotionSettings();
-  const { data, loading, error } = useOrtopediaDashboard(role === ROLES.ORTOPEDIA_ADMIN);
+  const canView = canAccessOrtopediaDashboard(role) && canAccessModule(role, "ortopedia-dashboard");
+  const { data, loading, error } = useOrtopediaDashboard(canView);
 
-  if (role !== ROLES.ORTOPEDIA_ADMIN) {
+  if (!canView) {
     return (
       <Card>
         <CardHeader>

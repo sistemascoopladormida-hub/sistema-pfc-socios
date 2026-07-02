@@ -2,11 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { buildOrtopediaDashboard } from "@/lib/ortopedia-dashboard";
-import { ROLES } from "@/lib/roles";
+import { canAccessOrtopediaDashboard } from "@/lib/roles";
 
 export async function GET() {
   const role = cookies().get("rol")?.value;
-  if (role !== ROLES.ORTOPEDIA_ADMIN) {
+  if (!canAccessOrtopediaDashboard(role)) {
     return NextResponse.json(
       { success: false, error: "Acceso restringido al Dashboard de Ortopedia" },
       { status: 403 }

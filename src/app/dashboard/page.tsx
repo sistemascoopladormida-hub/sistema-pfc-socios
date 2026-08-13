@@ -29,6 +29,7 @@ type DashboardResponse = {
   success: boolean;
   data?: {
     personas_cubiertas: number;
+    socios_activos: number;
     socios_titulares: number;
     socios_adherentes: number;
     adherentes_beneficio_titular: number;
@@ -416,8 +417,8 @@ export default function DashboardPage() {
         />
         <MetricCard
           label="Socios activos"
-          value={dashboardData.socios_titulares}
-          description="Socios titulares con actividad en el sistema."
+          value={dashboardData.socios_activos ?? dashboardData.socios_titulares}
+          description="Cuentas PFC con servicio vigente (titulares)."
           icon={Users}
           tone="slate"
         />

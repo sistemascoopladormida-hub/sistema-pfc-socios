@@ -4,6 +4,11 @@ import { NextResponse } from "next/server";
 import { calcularEdad, resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { etiquetaMesAnioTurnoEs } from "@/lib/fecha-turno";
 import { requiereCoberturaPropia } from "@/lib/pfc-rules";
+import {
+  servicioPfcActivo,
+  validarServicioPfcParaNuevaOperacion,
+  VW_SOCIOS_SERVICIO_SELECT_SQL,
+} from "@/lib/socio-servicio-pfc";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type CrearTurnoBody = {
@@ -62,6 +67,8 @@ type SocioBeneficioRow = {
   VINCULO: string | null;
   FECHA_NACIMIENTO: string | Date | null;
   DES_CAT: string | null;
+  FECHA_ALTA?: string | Date | null;
+  FECHA_BAJA?: string | Date | null;
 };
 
 const ESTADOS_OCUPADOS = ["RESERVADO", "ATENDIDO"] as const;
@@ -443,7 +450,8 @@ export async function POST(request: Request) {
           ADHERENTE_CODIGO,
           VINCULO,
           FECHA_NACIMIENTO,
-          DES_CAT
+          DES_CAT,
+          ${VW_SOCIOS_SERVICIO_SELECT_SQL}
         FROM PR_DORM.dbo.vw_socios_adherentes
         WHERE COD_SOC = @cod_soc
           AND ADHERENTE_CODIGO = @adherente_codigo
@@ -461,7 +469,8 @@ export async function POST(request: Request) {
             ADHERENTE_CODIGO,
             VINCULO,
             FECHA_NACIMIENTO,
-            DES_CAT
+            DES_CAT,
+            ${VW_SOCIOS_SERVICIO_SELECT_SQL}
           FROM PR_DORM.dbo.vw_socios_adherentes
           WHERE COD_SOC = @cod_soc
             AND VINCULO = 'TITULAR'
@@ -477,6 +486,14 @@ export async function POST(request: Request) {
       });
     }
 
+    const vigenciaServicio = validarServicioPfcParaNuevaOperacion(perfilPaciente);
+    if (!vigenciaServicio.ok) {
+      return NextResponse.json({
+        success: false,
+        error: vigenciaServicio.error,
+      });
+    }
+
     const tipoBeneficio = resolverBeneficio(
       perfilPaciente?.VINCULO ?? "TITULAR",
       perfilPaciente?.FECHA_NACIMIENTO
@@ -488,12 +505,14 @@ export async function POST(request: Request) {
         ADHERENTE_CODIGO,
         VINCULO,
         FECHA_NACIMIENTO,
-        DES_CAT
+        DES_CAT,
+        ${VW_SOCIOS_SERVICIO_SELECT_SQL}
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
     `);
     const grupoRows = grupoResult.recordset as SocioBeneficioRow[];
     const adherentesConBeneficioTitular = grupoRows
+      .filter((row) => servicioPfcActivo(row.FECHA_ALTA, row.FECHA_BAJA))
       .filter(
         (row) =>
           !requiereCoberturaPropia({

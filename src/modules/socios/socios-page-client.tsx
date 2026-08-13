@@ -33,6 +33,16 @@ type SocioListadoRow = {
   COMPARTE_COBERTURA?: boolean;
   ESTADO_BENEFICIO?: "COBERTURA_FAMILIAR" | "CUOTA_PROPIA_REQUERIDA" | string;
   TIPO_BENEFICIO?: "PROPIO" | "TITULAR" | "NO_DEFINIDO" | string;
+  FECHA_ALTA?: string | null;
+  FECHA_BAJA?: string | null;
+  ES_MIGRADO?: boolean;
+  ESTADO_SERVICIO?: "ACTIVO" | "BAJA" | "PENDIENTE" | "REVISAR" | string;
+  SERVICIO_ACTIVO?: boolean;
+  fecha_alta?: string | null;
+  fecha_baja?: string | null;
+  es_migrado?: boolean;
+  estado_servicio?: "ACTIVO" | "BAJA" | "PENDIENTE" | "REVISAR" | string;
+  servicio_activo?: boolean;
 };
 
 type ApiResponse = {
@@ -90,6 +100,35 @@ function getEstadoCoberturaBadgeKind(row: SocioListadoRow): "cobertura-familiar"
     return "cobertura-regularizar";
   }
   return "cobertura-familiar";
+}
+
+function resolveEstadoServicio(row: SocioListadoRow) {
+  return String(row.estado_servicio ?? row.ESTADO_SERVICIO ?? "REVISAR").toUpperCase();
+}
+
+function servicioPermiteNuevoTurno(row: SocioListadoRow) {
+  if (row.servicio_activo !== undefined) return Boolean(row.servicio_activo);
+  if (row.SERVICIO_ACTIVO !== undefined) return Boolean(row.SERVICIO_ACTIVO);
+  return resolveEstadoServicio(row) === "ACTIVO";
+}
+
+function getEstadoServicioLabel(row: SocioListadoRow) {
+  const estado = resolveEstadoServicio(row);
+  if (estado === "ACTIVO" && (row.es_migrado || row.ES_MIGRADO)) return "Activo (migrado)";
+  if (estado === "ACTIVO") return "Activo";
+  if (estado === "BAJA") return "Baja";
+  if (estado === "PENDIENTE") return "Pendiente";
+  return "Revisar";
+}
+
+function getEstadoServicioBadgeKind(
+  row: SocioListadoRow
+): "servicio-activo" | "servicio-baja" | "servicio-pendiente" | "servicio-revisar" {
+  const estado = resolveEstadoServicio(row);
+  if (estado === "ACTIVO") return "servicio-activo";
+  if (estado === "BAJA") return "servicio-baja";
+  if (estado === "PENDIENTE") return "servicio-pendiente";
+  return "servicio-revisar";
 }
 
 function resolveSegmentoParam(cardFilter: SocioCardFilter, coberturaFilter: CoberturaQuickFilter) {
@@ -286,6 +325,7 @@ export function SociosPageClient() {
           { header: "Edad", key: "edad" },
           { header: "DNI", key: "dni" },
           { header: "Categoria", key: "categoria" },
+          { header: "Estado servicio", key: "estadoServicio" },
           { header: "Estado cobertura", key: "estadoCobertura" },
         ],
         rows: sociosFiltrados.map((row) => ({
@@ -295,6 +335,7 @@ export function SociosPageClient() {
           edad: Number.isFinite(Number(row.EDAD)) ? `${Number(row.EDAD)}` : "Sin dato",
           dni: row.DNI_ADHERENTE || "No registrado",
           categoria: row.DES_CAT || "No registrado",
+          estadoServicio: getEstadoServicioLabel(row),
           estadoCobertura: getEstadoCoberturaLabel(row),
         })),
       });
@@ -520,6 +561,7 @@ export function SociosPageClient() {
                       <TableHead>Edad</TableHead>
                       <TableHead>DNI</TableHead>
                       <TableHead>Categoria</TableHead>
+                      <TableHead>Estado servicio</TableHead>
                       <TableHead>Estado cobertura</TableHead>
                       <TableHead>Acciones</TableHead>
                     </TableRow>
@@ -528,7 +570,13 @@ export function SociosPageClient() {
                     {sociosFiltrados.map((socio) => (
                       <TableRow
                         key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`}
-                        className={personaRequiereCoberturaPropia(socio) ? "bg-amber-400/5" : undefined}
+                        className={
+                          personaRequiereCoberturaPropia(socio)
+                            ? "bg-amber-400/5"
+                            : !servicioPermiteNuevoTurno(socio)
+                              ? "bg-muted/40"
+                              : undefined
+                        }
                       >
                         <TableCell>{socio.COD_SOC || "No registrado"}</TableCell>
                         <TableCell>
@@ -554,6 +602,11 @@ export function SociosPageClient() {
                           )}
                         </TableCell>
                         <TableCell>
+                          <DataBadge kind={getEstadoServicioBadgeKind(socio)}>
+                            {getEstadoServicioLabel(socio)}
+                          </DataBadge>
+                        </TableCell>
+                        <TableCell>
                           <DataBadge kind={getEstadoCoberturaBadgeKind(socio)}>
                             {getEstadoCoberturaLabel(socio)}
                           </DataBadge>
@@ -572,12 +625,29 @@ export function SociosPageClient() {
                               </Button>
                             </div>
                             <div className="group relative">
-                              <ActionTooltip label="Crear turno" />
-                              <Link href={buildTurnoUrl(socio)} aria-label="Crear turno">
-                                <Button size="icon-sm" variant="outline">
-                                  <CalendarPlus2 className="h-4 w-4" />
+                              <ActionTooltip
+                                label={
+                                  servicioPermiteNuevoTurno(socio)
+                                    ? "Crear turno"
+                                    : "Servicio PFC no vigente"
+                                }
+                              />
+                              {servicioPermiteNuevoTurno(socio) ? (
+                                <Link href={buildTurnoUrl(socio)} aria-label="Crear turno">
+                                  <Button size="icon-sm" variant="outline">
+                                    <CalendarPlus2 className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              ) : (
+                                <Button
+                                  size="icon-sm"
+                                  variant="outline"
+                                  disabled
+                                  aria-label="Servicio PFC no vigente"
+                                >
+                                  <CalendarPlus2 className="h-4 w-4 opacity-40" />
                                 </Button>
-                              </Link>
+                              )}
                             </div>
                             <div className="group relative">
                               <ActionTooltip label="Ver historial" />
@@ -599,7 +669,13 @@ export function SociosPageClient() {
                 {sociosFiltrados.map((socio) => (
                   <div
                     key={`${socio.COD_SOC}-${socio.ADHERENTE_CODIGO}-${socio.DNI_ADHERENTE}`}
-                    className={`data-card space-y-4 ${personaRequiereCoberturaPropia(socio) ? "border-amber-300/25 bg-amber-400/5" : ""}`}
+                    className={`data-card space-y-4 ${
+                      personaRequiereCoberturaPropia(socio)
+                        ? "border-amber-300/25 bg-amber-400/5"
+                        : !servicioPermiteNuevoTurno(socio)
+                          ? "border-border/80 bg-muted/20"
+                          : ""
+                    }`}
                   >
                     <div className="space-y-1">
                       <p className="text-base font-semibold text-foreground">{socio.ADHERENTE_NOMBRE || socio.APELLIDOS || "No registrado"}</p>
@@ -635,6 +711,14 @@ export function SociosPageClient() {
                         </div>
                       </div>
                       <div>
+                        <p className="field-help">Estado servicio</p>
+                        <div className="pt-1">
+                          <DataBadge kind={getEstadoServicioBadgeKind(socio)}>
+                            {getEstadoServicioLabel(socio)}
+                          </DataBadge>
+                        </div>
+                      </div>
+                      <div>
                         <p className="field-help">Estado cobertura</p>
                         <div className="pt-1">
                           <DataBadge kind={getEstadoCoberturaBadgeKind(socio)}>
@@ -657,12 +741,22 @@ export function SociosPageClient() {
                         </Button>
                       </div>
                       <div className="group relative sm:flex-1">
-                        <ActionTooltip label="Crear turno" />
-                        <Link href={buildTurnoUrl(socio)} className="sm:flex-1" aria-label="Crear turno">
-                          <Button variant="outline" className="w-full">
-                            <CalendarPlus2 className="h-4 w-4" />
+                        <ActionTooltip
+                          label={
+                            servicioPermiteNuevoTurno(socio) ? "Crear turno" : "Servicio PFC no vigente"
+                          }
+                        />
+                        {servicioPermiteNuevoTurno(socio) ? (
+                          <Link href={buildTurnoUrl(socio)} className="sm:flex-1" aria-label="Crear turno">
+                            <Button variant="outline" className="w-full">
+                              <CalendarPlus2 className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button variant="outline" className="w-full" disabled aria-label="Servicio PFC no vigente">
+                            <CalendarPlus2 className="h-4 w-4 opacity-40" />
                           </Button>
-                        </Link>
+                        )}
                       </div>
                       <div className="group relative sm:flex-1">
                         <ActionTooltip label="Ver historial" />
@@ -708,20 +802,34 @@ export function SociosPageClient() {
                     <p><span className="font-medium text-foreground">Edad:</span> {Number.isFinite(Number(item.EDAD)) ? `${Number(item.EDAD)} anos` : "Sin dato"}</p>
                     <p><span className="font-medium text-foreground">DNI:</span> {item.DNI_ADHERENTE || "No registrado"}</p>
                     <p><span className="font-medium text-foreground">Categoria:</span> {item.DES_CAT || "No registrado"}</p>
-                    <div className="pt-1">
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <DataBadge kind={getEstadoServicioBadgeKind(item)}>
+                        {getEstadoServicioLabel(item)}
+                      </DataBadge>
                       <DataBadge kind={getEstadoCoberturaBadgeKind(item)}>
                         {getEstadoCoberturaLabel(item)}
                       </DataBadge>
                     </div>
                     <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row">
                       <div className="group relative sm:flex-1">
-                        <ActionTooltip label="Crear turno" />
-                        <Link href={buildTurnoUrl(item)} className="sm:flex-1" aria-label="Crear turno">
-                          <Button className="w-full">
-                            <CalendarPlus2 className="h-4 w-4" />
-                            <p>Crear turno</p>
+                        <ActionTooltip
+                          label={
+                            servicioPermiteNuevoTurno(item) ? "Crear turno" : "Servicio PFC no vigente"
+                          }
+                        />
+                        {servicioPermiteNuevoTurno(item) ? (
+                          <Link href={buildTurnoUrl(item)} className="sm:flex-1" aria-label="Crear turno">
+                            <Button className="w-full">
+                              <CalendarPlus2 className="h-4 w-4" />
+                              <p>Crear turno</p>
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button className="w-full" disabled aria-label="Servicio PFC no vigente">
+                            <CalendarPlus2 className="h-4 w-4 opacity-40" />
+                            <p>Servicio no vigente</p>
                           </Button>
-                        </Link>
+                        )}
                       </div>
                       <div className="group relative sm:flex-1">
                         <ActionTooltip label="Ver historial" />

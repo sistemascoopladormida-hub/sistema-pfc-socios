@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 
 import { calcularEdad, resolverBeneficio } from "@/lib/adherentes-beneficios";
 import { calcularCoberturaBeneficiario, requiereCoberturaPropia } from "@/lib/pfc-rules";
+import {
+  calcularCamposServicioPfc,
+  servicioPfcActivo,
+  VW_SOCIOS_SERVICIO_SELECT_SQL,
+} from "@/lib/socio-servicio-pfc";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type HistorialRow = {
@@ -48,6 +53,8 @@ type PacienteLookupRow = {
   DNI_ADHERENTE: string | null;
   FECHA_NACIMIENTO: string | Date | null;
   DES_CAT: string | null;
+  FECHA_ALTA?: string | Date | null;
+  FECHA_BAJA?: string | Date | null;
 };
 
 const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
@@ -171,7 +178,8 @@ export async function GET(request: Request) {
         VINCULO,
         DNI_ADHERENTE,
         FECHA_NACIMIENTO,
-        DES_CAT
+        DES_CAT,
+        ${VW_SOCIOS_SERVICIO_SELECT_SQL}
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
     `);
@@ -197,7 +205,15 @@ export async function GET(request: Request) {
       pacienteRow?.VINCULO ?? "TITULAR",
       pacienteRow?.FECHA_NACIMIENTO
     );
+    const servicioPaciente = pacienteRow
+      ? calcularCamposServicioPfc({
+          FECHA_ALTA: pacienteRow.FECHA_ALTA,
+          FECHA_BAJA: pacienteRow.FECHA_BAJA,
+        })
+      : null;
+
     const adherentesConBeneficioTitular = grupoRows
+      .filter((row) => servicioPfcActivo(row.FECHA_ALTA, row.FECHA_BAJA))
       .filter(
         (row) =>
           !requiereCoberturaPropia({
@@ -428,6 +444,11 @@ export async function GET(request: Request) {
               requiereCuotaPropia: coberturaPaciente.requiereCuotaPropia,
               comparteCobertura: coberturaPaciente.comparteCobertura,
               estadoBeneficio: coberturaPaciente.estadoBeneficio,
+              fecha_alta: servicioPaciente?.fecha_alta ?? null,
+              fecha_baja: servicioPaciente?.fecha_baja ?? null,
+              es_migrado: servicioPaciente?.es_migrado ?? false,
+              estado_servicio: servicioPaciente?.estado_servicio ?? "REVISAR",
+              servicio_activo: servicioPaciente?.servicio_activo ?? false,
             }
           : null,
         resumen,

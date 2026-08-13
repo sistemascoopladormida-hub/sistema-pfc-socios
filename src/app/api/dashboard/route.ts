@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { calcularEdad } from "@/lib/adherentes-beneficios";
 import { requiereCoberturaPropia } from "@/lib/pfc-rules";
+import {
+  servicioPfcActivo,
+  VW_SOCIOS_SERVICIO_SELECT_SQL,
+} from "@/lib/socio-servicio-pfc";
 import { getSqlConnection, getSqlConnectionPfc } from "@/lib/sqlserver";
 
 type TotalRow = {
@@ -9,8 +13,12 @@ type TotalRow = {
 };
 
 type SocioClasificacionRow = {
+  COD_SOC: number | string;
+  ADHERENTE_CODIGO: number | string;
   VINCULO: string | null;
   FECHA_NACIMIENTO: string | Date | null;
+  FECHA_ALTA?: string | Date | null;
+  FECHA_BAJA?: string | Date | null;
 };
 
 type PrestacionTopRow = {
@@ -132,8 +140,11 @@ export async function GET() {
     ] = await Promise.all([
       billingPool.request().query(`
         SELECT
+          COD_SOC,
+          ADHERENTE_CODIGO,
           VINCULO,
-          FECHA_NACIMIENTO
+          FECHA_NACIMIENTO,
+          ${VW_SOCIOS_SERVICIO_SELECT_SQL}
         FROM PR_DORM.dbo.vw_socios_adherentes
       `),
     ]);
@@ -235,7 +246,12 @@ export async function GET() {
     ]);
 
     const sociosRows = clasificacionSociosResult.recordset as SocioClasificacionRow[];
-    const resumenSocios = sociosRows.reduce(
+    const sociosActivosRows = sociosRows.filter((row) =>
+      servicioPfcActivo(row.FECHA_ALTA, row.FECHA_BAJA)
+    );
+    const personasUnicasActivas = new Set<string>();
+
+    const resumenSocios = sociosActivosRows.reduce(
       (acc, row) => {
         const vinculoNormalizado = String(row.VINCULO ?? "")
           .trim()
@@ -244,10 +260,16 @@ export async function GET() {
           .replace(/[\u0300-\u036f]/g, "");
         const esTitular = vinculoNormalizado === "TITULAR";
         const edad = calcularEdad(row.FECHA_NACIMIENTO);
+        const personaKey = `${Number(row.COD_SOC)}-${Number(row.ADHERENTE_CODIGO)}`;
 
-        acc.personasCubiertas += 1;
+        if (!personasUnicasActivas.has(personaKey)) {
+          personasUnicasActivas.add(personaKey);
+          acc.personasCubiertas += 1;
+        }
+
         if (esTitular) {
           acc.sociosTitulares += 1;
+          acc.sociosActivosCodSoc.add(Number(row.COD_SOC));
         } else {
           acc.sociosAdherentes += 1;
         }
@@ -278,12 +300,14 @@ export async function GET() {
         sociosAdherentes: 0,
         adherentesBeneficioTitular: 0,
         beneficiariosCoberturaPropia: 0,
+        sociosActivosCodSoc: new Set<number>(),
       }
     );
 
     const personasCubiertas = resumenSocios.personasCubiertas;
     const sociosTitulares = resumenSocios.sociosTitulares;
     const sociosAdherentes = resumenSocios.sociosAdherentes;
+    const sociosActivos = resumenSocios.sociosActivosCodSoc.size;
     const adherentesBeneficioTitular = resumenSocios.adherentesBeneficioTitular;
     const beneficiariosCoberturaPropia = resumenSocios.beneficiariosCoberturaPropia;
     const turnosHoy = toNumber((turnosAnioResult.recordset[0] as TotalRow | undefined)?.total);
@@ -384,6 +408,7 @@ export async function GET() {
       success: true,
       data: {
         personas_cubiertas: personasCubiertas,
+        socios_activos: sociosActivos,
         socios_titulares: sociosTitulares,
         socios_adherentes: sociosAdherentes,
         adherentes_beneficio_titular: adherentesBeneficioTitular,

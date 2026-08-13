@@ -1,7 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { enriquecerSocioConCobertura } from "@/lib/pfc-rules";
+import { enriquecerSocioCompleto, VW_SOCIOS_SERVICIO_SELECT_SQL } from "@/lib/socio-servicio-pfc";
 import { getSqlConnection } from "@/lib/sqlserver";
 
 type Params = {
@@ -53,7 +53,8 @@ export async function GET(_: Request, { params }: Params) {
         VINCULO,
         DNI_ADHERENTE,
         DES_CAT,
-        FECHA_NACIMIENTO
+        FECHA_NACIMIENTO,
+        ${VW_SOCIOS_SERVICIO_SELECT_SQL}
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
       ORDER BY
@@ -61,7 +62,7 @@ export async function GET(_: Request, { params }: Params) {
         ADHERENTE_NOMBRE
     `);
 
-    const data = (result.recordset as SocioGrupoRow[]).map((row) => enriquecerSocioConCobertura(row));
+    const data = (result.recordset as SocioGrupoRow[]).map((row) => enriquecerSocioCompleto(row));
 
     grupoCache.set(codSoc, {
       expiresAt: now + SOCIO_GRUPO_CACHE_TTL_MS,

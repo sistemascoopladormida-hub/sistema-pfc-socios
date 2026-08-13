@@ -1,7 +1,7 @@
 import sql from "mssql";
 import { NextResponse } from "next/server";
 
-import { enriquecerSocioConCobertura } from "@/lib/pfc-rules";
+import { enriquecerSocioCompleto, VW_SOCIOS_SERVICIO_SELECT_SQL } from "@/lib/socio-servicio-pfc";
 import { getSqlConnection } from "@/lib/sqlserver";
 
 type SocioRow = {
@@ -61,7 +61,8 @@ const SELECT_LIST = `
   VINCULO,
   DNI_ADHERENTE,
   DES_CAT,
-  FECHA_NACIMIENTO
+  FECHA_NACIMIENTO,
+  ${VW_SOCIOS_SERVICIO_SELECT_SQL}
 `;
 
 const FROM_SOCIOS = `FROM PR_DORM.dbo.vw_socios_adherentes WITH (NOLOCK)`;
@@ -133,7 +134,7 @@ function isDigitsOnly(value: string) {
 }
 
 function mapSociosRows(rows: SocioRow[]) {
-  return rows.map((row) => enriquecerSocioConCobertura(row));
+  return rows.map((row) => enriquecerSocioCompleto(row));
 }
 
 function toNumber(value: unknown) {

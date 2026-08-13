@@ -2,6 +2,10 @@ import sql from "mssql";
 import { NextResponse } from "next/server";
 
 import { resolverBeneficio } from "@/lib/adherentes-beneficios";
+import {
+  validarServicioPfcParaNuevaOperacion,
+  VW_SOCIOS_SERVICIO_SELECT_SQL,
+} from "@/lib/socio-servicio-pfc";
 import { getSqlConnection, getSqlConnectionPfc, runMigrations } from "@/lib/sqlserver";
 
 type EstadoManual = "ATENDIDO" | "AUSENTE" | "CANCELADO";
@@ -54,6 +58,10 @@ type PacienteContext = {
   categoria: string;
   tipoBeneficio: "PROPIO" | "TITULAR" | "NO_DEFINIDO";
   coberturaScope: "INDIVIDUAL" | "COMPARTIDA";
+  servicioRow: {
+    FECHA_ALTA?: string | Date | null;
+    FECHA_BAJA?: string | Date | null;
+  } | null;
 };
 
 async function resolveColumnByAliases(
@@ -86,7 +94,8 @@ async function getPacienteContext(codSoc: number, adherenteCodigo: number): Prom
       SELECT TOP 1
         DES_CAT,
         VINCULO,
-        FECHA_NACIMIENTO
+        FECHA_NACIMIENTO,
+        ${VW_SOCIOS_SERVICIO_SELECT_SQL}
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
         AND ADHERENTE_CODIGO = @adherente_codigo
@@ -95,13 +104,20 @@ async function getPacienteContext(codSoc: number, adherenteCodigo: number): Prom
   let categoria = normalizeText(result.recordset[0]?.DES_CAT);
   let vinculo = result.recordset[0]?.VINCULO;
   let fechaNacimiento = result.recordset[0]?.FECHA_NACIMIENTO;
+  let servicioRow: PacienteContext["servicioRow"] = result.recordset[0]
+    ? {
+        FECHA_ALTA: result.recordset[0]?.FECHA_ALTA ?? null,
+        FECHA_BAJA: result.recordset[0]?.FECHA_BAJA ?? null,
+      }
+    : null;
 
   if (!categoria && adherenteCodigo === 0) {
     const fallback = await sociosPool.request().input("cod_soc", sql.Int, codSoc).query(`
       SELECT TOP 1
         DES_CAT,
         VINCULO,
-        FECHA_NACIMIENTO
+        FECHA_NACIMIENTO,
+        ${VW_SOCIOS_SERVICIO_SELECT_SQL}
       FROM PR_DORM.dbo.vw_socios_adherentes
       WHERE COD_SOC = @cod_soc
         AND VINCULO = 'TITULAR'
@@ -109,6 +125,12 @@ async function getPacienteContext(codSoc: number, adherenteCodigo: number): Prom
     categoria = normalizeText(fallback.recordset[0]?.DES_CAT);
     vinculo = fallback.recordset[0]?.VINCULO;
     fechaNacimiento = fallback.recordset[0]?.FECHA_NACIMIENTO;
+    servicioRow = fallback.recordset[0]
+      ? {
+          FECHA_ALTA: fallback.recordset[0]?.FECHA_ALTA ?? null,
+          FECHA_BAJA: fallback.recordset[0]?.FECHA_BAJA ?? null,
+        }
+      : servicioRow;
   }
 
   const tipoBeneficio = resolverBeneficio(vinculo, fechaNacimiento);
@@ -116,6 +138,7 @@ async function getPacienteContext(codSoc: number, adherenteCodigo: number): Prom
     categoria: categoria || "SIN_CATEGORIA",
     tipoBeneficio,
     coberturaScope: tipoBeneficio === "PROPIO" ? "INDIVIDUAL" : "COMPARTIDA",
+    servicioRow,
   };
 }
 
@@ -247,6 +270,11 @@ export async function POST(request: Request) {
     ]);
 
     const pacienteContext = await getPacienteContext(codSoc, adherenteCodigo);
+    const vigenciaServicio = validarServicioPfcParaNuevaOperacion(pacienteContext.servicioRow);
+    if (!vigenciaServicio.ok) {
+      return NextResponse.json({ success: false, error: vigenciaServicio.error });
+    }
+
     const categoriaPaciente = pacienteContext.categoria;
 
     await transaction.begin();

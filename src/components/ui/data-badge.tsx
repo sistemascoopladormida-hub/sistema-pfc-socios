@@ -7,6 +7,10 @@ type DataBadgeKind =
   | "beneficio-propio"
   | "cobertura-familiar"
   | "cobertura-regularizar"
+  | "servicio-activo"
+  | "servicio-baja"
+  | "servicio-pendiente"
+  | "servicio-revisar"
   | "reservado"
   | "atendido"
   | "ausente"
@@ -27,6 +31,10 @@ const byKind: Record<DataBadgeKind, string> = {
   "beneficio-propio": "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
   "cobertura-familiar": "border border-emerald-300/20 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300",
   "cobertura-regularizar": "border border-amber-300/20 bg-amber-400/10 text-amber-800 dark:text-amber-200",
+  "servicio-activo": "border border-emerald-300/20 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300",
+  "servicio-baja": "border border-rose-300/20 bg-rose-400/10 text-rose-700 dark:text-rose-300",
+  "servicio-pendiente": "border border-sky-300/20 bg-sky-400/10 text-sky-700 dark:text-sky-300",
+  "servicio-revisar": "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
   reservado: "border border-amber-300/20 bg-amber-400/10 text-amber-700 dark:text-amber-300",
   atendido: "border border-emerald-300/20 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300",
   ausente: "border border-rose-300/20 bg-rose-400/10 text-rose-700 dark:text-rose-300",

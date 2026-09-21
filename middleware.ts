@@ -11,6 +11,7 @@ function hasValidRoleCookie(request: NextRequest) {
   const role = request.cookies.get("rol")?.value;
   return (
     role === "admin" ||
+    role === "admin_alfonsina" ||
     role === "admin_vanesa" ||
     role === "developer" ||
     role === "directivo" ||

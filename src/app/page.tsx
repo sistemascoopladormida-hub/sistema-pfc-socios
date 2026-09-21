@@ -6,7 +6,13 @@ export default function Home() {
   if (role === "ortopedia_admin") {
     redirect("/ortopedia");
   }
-  if (role === "admin" || role === "admin_vanesa" || role === "developer" || role === "directivo") {
+  if (
+    role === "admin" ||
+    role === "admin_alfonsina" ||
+    role === "admin_vanesa" ||
+    role === "developer" ||
+    role === "directivo"
+  ) {
     redirect("/dashboard");
   }
   redirect("/login");

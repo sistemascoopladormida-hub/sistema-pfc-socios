@@ -1,1 +1,6 @@
-export type UserRole = "admin" | "admin_vanesa" | "developer" | "ortopedia_admin";
+export type UserRole =
+  | "admin"
+  | "admin_alfonsina"
+  | "admin_vanesa"
+  | "developer"
+  | "ortopedia_admin";

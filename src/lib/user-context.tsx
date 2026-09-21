@@ -58,6 +58,16 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
     "prestaciones",
     "reportes",
   ],
+  admin_alfonsina: [
+    "dashboard",
+    "socios",
+    "turnos",
+    "agenda-profesional",
+    "profesionales",
+    "especialidades",
+    "prestaciones",
+    "reportes",
+  ],
   admin_vanesa: [
     "dashboard",
     "socios",
@@ -98,6 +108,7 @@ const roleModuleAccess: Record<UserRole, AppModule[]> = {
 
 export const roleLabel: Record<UserRole, string> = {
   admin: "Administrador",
+  admin_alfonsina: "Administrador",
   admin_vanesa: "Administradora",
   developer: "Desarrollador",
   ortopedia_admin: "Admin Ortopedia",
@@ -105,6 +116,7 @@ export const roleLabel: Record<UserRole, string> = {
 
 export const simulatedUserByRole: Record<UserRole, string> = {
   admin: ROLE_USERS.admin,
+  admin_alfonsina: ROLE_USERS.admin_alfonsina,
   admin_vanesa: ROLE_USERS.admin_vanesa,
   developer: ROLE_USERS.developer,
   ortopedia_admin: ROLE_USERS.ortopedia_admin,
@@ -124,6 +136,7 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
     const storedRole = localStorage.getItem("rol");
     if (
       storedRole === ROLES.ADMIN ||
+      storedRole === ROLES.ADMIN_ALFONSINA ||
       storedRole === ROLES.ADMIN_VANESA ||
       storedRole === ROLES.DEVELOPER ||
       storedRole === ROLES.ORTOPEDIA_ADMIN
@@ -154,6 +167,7 @@ export function UserProvider({ children, initialRole }: UserProviderProps) {
       const storedRole = localStorage.getItem("rol");
       if (
         storedRole === ROLES.ADMIN ||
+        storedRole === ROLES.ADMIN_ALFONSINA ||
         storedRole === ROLES.ADMIN_VANESA ||
         storedRole === ROLES.DEVELOPER ||
         storedRole === ROLES.ORTOPEDIA_ADMIN

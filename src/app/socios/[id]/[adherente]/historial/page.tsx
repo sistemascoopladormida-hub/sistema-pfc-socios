@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ROLES } from "@/lib/roles";
+import { isAdmin, ROLES } from "@/lib/roles";
 import { useUser } from "@/lib/user-context";
 
 type HistorialItem = {
@@ -198,8 +198,8 @@ export default function HistorialSocioPage() {
   const [familiaError, setFamiliaError] = useState<string | null>(null);
   const [familiaItems, setFamiliaItems] = useState<FamiliaHistorialItem[]>([]);
   const [familiaMensaje, setFamiliaMensaje] = useState<string | null>(null);
-  const canManualLoad = role === ROLES.ADMIN || role === ROLES.DEVELOPER;
-  const canDeleteTurno = role === ROLES.ADMIN || role === ROLES.DEVELOPER;
+  const canManualLoad = isAdmin(role) || role === ROLES.DEVELOPER;
+  const canDeleteTurno = isAdmin(role) || role === ROLES.DEVELOPER;
   const podologiaResumen = useMemo(() => {
     const categoriaNormalizada = normalizeText(categoria);
     const isPlus = categoriaNormalizada.includes("PLUS");

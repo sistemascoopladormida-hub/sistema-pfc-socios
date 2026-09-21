@@ -36,6 +36,7 @@ export default async function RootLayout({
   const roleCookie = cookies().get("rol")?.value;
   const initialRole: UserRole | undefined =
     roleCookie === "admin" ||
+    roleCookie === "admin_alfonsina" ||
     roleCookie === "admin_vanesa" ||
     roleCookie === "developer" ||
     roleCookie === "directivo" ||

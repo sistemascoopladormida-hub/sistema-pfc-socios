@@ -1,5 +1,6 @@
 export const ROLES = {
   ADMIN: "admin",
+  ADMIN_ALFONSINA: "admin_alfonsina",
   ADMIN_VANESA: "admin_vanesa",
   DEVELOPER: "developer",
   ORTOPEDIA_ADMIN: "ortopedia_admin",
@@ -9,6 +10,7 @@ export type AppRole = (typeof ROLES)[keyof typeof ROLES];
 
 export const ROLE_PASSWORDS: Record<AppRole, string> = {
   [ROLES.ADMIN]: "adminPFC2026",
+  [ROLES.ADMIN_ALFONSINA]: "AlfonsinaPFC2026",
   [ROLES.ADMIN_VANESA]: "VanesaPFC2026",
   [ROLES.DEVELOPER]: "BrianPFC2026",
   [ROLES.ORTOPEDIA_ADMIN]: "GuadalupePFC2026",
@@ -16,12 +18,14 @@ export const ROLE_PASSWORDS: Record<AppRole, string> = {
 
 export const ROLE_USERS: Record<AppRole, string> = {
   [ROLES.ADMIN]: "Marianela Farias",
+  [ROLES.ADMIN_ALFONSINA]: "Alfonsina Bustos",
   [ROLES.ADMIN_VANESA]: "Vanesa Caminos",
   [ROLES.DEVELOPER]: "Brian Gelvez",
   [ROLES.ORTOPEDIA_ADMIN]: "Guadalupe Saavedra",
 };
 
-export const isAdmin = (rol: string | null | undefined) => rol === ROLES.ADMIN;
+export const isAdmin = (rol: string | null | undefined) =>
+  rol === ROLES.ADMIN || rol === ROLES.ADMIN_ALFONSINA;
 export const isAdminVanesa = (rol: string | null | undefined) => rol === ROLES.ADMIN_VANESA;
 export const isDeveloper = (rol: string | null | undefined) => rol === ROLES.DEVELOPER;
 export const isOrtopediaAdmin = (rol: string | null | undefined) => rol === ROLES.ORTOPEDIA_ADMIN;
